@@ -1,4 +1,10 @@
 import tensorflow as tf
+from tensorflow.python.ops import variable_scope
+
+def AttentionDecoder(decoder_inputs, initial_state, encoder_states, cell, initial_state_attention=False, pointer_gen=True, use_coverage=False, prev_coverage=None):
+    with variable_scope.variable_scope('attention_decoder') as scope:
+        batch_size = encoder_states.get_shape()[0].value
+        attn_size = encoder_states.get_shape()[2].value
 
 class PointerModel(object):
     def __init__(self, hps, vocab):
@@ -53,4 +59,7 @@ class PointerModel(object):
                 name='reduce_h'
             )
             return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
+    def _add_decoder(self, inputs):
+        hps = self._hps
+        cell = tf.contrib.rnn.LSTMCell(hps.hidden_dim)
 
