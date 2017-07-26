@@ -5,22 +5,12 @@ import os
 import string
 
 class Preprocessor(object):
-    def __init__(self, min_occur=2000, text_root_dir=None, load_vocab_path=None, save_vocab_path=None):
-        if not load_vocab_path:
-            self.word2idx = {'<PAD>':0, '<BOS>':1, '<EOS>':2}
-            if text_root_dir:
-                self._get_vocab(text_root_dir, min_occur)
-                if save_vocab_path:
-                    with open(save_vocab_path, 'wb') as f_out:
-                    pickle.dump(self.word2idx, save_vocab_path)
-            else:
-                print('should provide either text_path or vocab_path')
-                exit(0)
-        else:
-            with open(load_vocab_path, 'rb') as f_in:
-                self.word2idx = pickle.load(f_in)
-
+    def __init__(self):
+        
     def check_punc(self, s):
+        """
+        check whether the whole word is punctuation
+        """
         s = s.strip()
         is_punc = [1 if c in string.punctuation else 0 for c in s]
         if sum(is_punc) == len(s):
@@ -28,7 +18,7 @@ class Preprocessor(object):
         else:
             return True
             
-    def make_datasets(self, text_root_dir, dump_path):
+    def make_datasets(self, text_root_dir, dump_path, unk_map_path, content_length=120, title_length=20):
          '''
          root_dir-content-train.txt
                          -valid.txt
@@ -37,19 +27,39 @@ class Preprocessor(object):
                        -valid.txt
                        -test.txt
          '''
+         unk_map = {'train':[], 'valid':[], 'test':[]}
          with h5py.File(dump_path, 'w') as f_hdf5:
              for dataset in ['train', 'valid', 'test']:
                 grp = f_hdf5.create_group(dataset)
                 with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
-                    x = []
-                    y = []
-                    for content, title in zip(f_content, f_title):
-                        words = [word for word in content.strip().split() if ]
-                            
-                        
-         
-        
-    def _get_vocab(self, root_dir, min_occur=2000):
+                    X = []
+                    Y = []
+                    for idx, (content, title) in enumerate(zip(f_content, f_title)):
+                        words = [word for word in content.strip().split() if self.check_punc(word)][:content_length]
+                        x = []
+                        # mapping the unk to words
+                        unk = {}
+                        for word in words:
+                            if word in self.word2idx:
+                               x.append(self.word2idx[word]) 
+                            else:
+                                unk_idx = len(unk)
+                                if 
+                                
+    def dump_vocab(self, path):
+        """
+        dump vocab to disk
+        """
+        with open(path, 'wb') as f_out:
+            pickle.dump(self.word2idx, save_vocab_path)
+        print('dump vocab file to {}'.format(path))
+    
+    def load_vocab(self, path):
+        with open(path, 'rb') as f_in:
+            self.word2idx = pickle.load(f_in)
+        print('load vocab file from {}'.format(path))
+
+    def get_vocab(self, root_dir, min_occur=2000, num_unk=20):
          '''
          root_dir-content-train.txt
                          -valid.txt
@@ -58,6 +68,11 @@ class Preprocessor(object):
                        -valid.txt
                        -test.txt
          '''
+        self.word2idx = {'<pad>':0, '<bos>':1, '<eos>':2}
+        # add unk to vocab
+        for i in range(num_unks):
+            self.word2idx['<unk' + '_{}>'.format(i)] = len(self.word2idx)
+        self.word2idx['<unk_other>'] = len(self.word2idx)
          count_dict = defaultdict(lambda: 0)
          for dataset in ['train', 'valid', 'test']:
             with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
@@ -69,4 +84,3 @@ class Preprocessor(object):
                     self.word2idx[word] = len(self.word2idx)
          print('vocab_size={}'.format(len(self.word2idx)))
          return 
-    
