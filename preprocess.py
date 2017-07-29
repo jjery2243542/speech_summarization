@@ -4,6 +4,7 @@ import pickle
 import os
 import string
 import argparse
+from collections import defaultdict
 
 class Preprocessor(object):
     def check_punc(self, s):
@@ -42,7 +43,7 @@ class Preprocessor(object):
         print('content_length < {} ={}, title_length < {} ={}'.format(content_threshold, content_cnt / num_data, title_threshold, title_cnt / num_data))
         return  
 
-    def make_datasets(self, text_root_dir, dump_path, unk_map_path, content_length=120, title_length=20):
+    def make_datasets(self, root_dir, dump_path, unk_map_path, content_length=80, title_length=15, num_unks=20):
          '''
          root_dir-content-train.txt
                          -valid.txt
@@ -59,7 +60,8 @@ class Preprocessor(object):
                     X = []
                     Y = []
                     for idx, (content, title) in enumerate(zip(f_content, f_title)):
-                        words = [word for word in content.strip().split() if self.check_punc(word)][:content_length]
+                        ## process content
+                        words = [word for word in content.strip().split() if self.check_punc(word)][:content_length - 1]
                         x = []
                         # mapping the unk to words
                         unk = {}
@@ -67,14 +69,46 @@ class Preprocessor(object):
                             if word in self.word2idx:
                                x.append(self.word2idx[word]) 
                             else:
-                                unk_idx = len(unk)
-                                
+                                if len(unk) < num_unks:
+                                    token = '<UNK_{}>'.format(len(unk))
+                                    unk[word] = token
+                                else:
+                                    token = '<UNK_OTHER>'
+                                x.append(self.word2idx[token])
+                        ## append EOS symbol
+                        x.append(self.word2idx['<EOS>'])
+                        ## padding
+                        if len(x) < content_length:
+                            x.extend([self.word2idx['<PAD>'] for i in range(content_length - len(x))])
+                        ## process title
+                        words = [word for word in title.strip().split() if self.check_punc(word)][:title_length - 1]
+                        y = []
+                        for word in words:
+                            if word in self.word2idx:
+                                y.append(self.word2idx[word])
+                            elif word in unk:
+                                y.append(self.word2idx[unk[word]])
+                            else:
+                                y.append(self.word2idx['<UNK_OTHER>'])
+                        ## append EOS symbol
+                        y.append(self.word2idx['<EOS>'])
+                        ## padding
+                        if len(y) < title_length:
+                            y.extend([self.word2idx['<PAD>'] for i in range(title_length - len(y))])
+                        X.append(x)        
+                        Y.append(y)
+                    X = np.array(X, dtype=np.int32)
+                    Y = np.array(Y, dtype=np.int32)
+                    print('{} X_shape={}, Y_shape={}'.format(dataset, X.shape, Y.shape))
+                    dset = grp.create_dataset('x', data=X, dtype=np.int32)
+                    dset = grp.create_dataset('y', data=Y, dtype=np.int32)
+
     def dump_vocab(self, path):
         """
         dump vocab to disk
         """
         with open(path, 'wb') as f_out:
-            pickle.dump(self.word2idx, save_vocab_path)
+            pickle.dump(self.word2idx, f_out)
         print('dump vocab file to {}'.format(path))
     
     def load_vocab(self, path):
@@ -82,7 +116,7 @@ class Preprocessor(object):
             self.word2idx = pickle.load(f_in)
         print('load vocab file from {}'.format(path))
 
-    def get_vocab(self, root_dir, min_occur=2000, num_unk=20):
+    def get_vocab(self, root_dir, min_occur=1000, num_unks=20):
         '''
         root_dir-content-train.txt
                         -valid.txt
@@ -91,11 +125,11 @@ class Preprocessor(object):
                       -valid.txt
                       -test.txt
         '''
-        self.word2idx = {'<pad>':0, '<bos>':1, '<eos>':2}
+        self.word2idx = {'<PAD>':0, '<BOS>':1, '<EOS>':2}
         # add unk to vocab
         for i in range(num_unks):
-            self.word2idx['<unk' + '_{}>'.format(i)] = len(self.word2idx)
-        self.word2idx['<unk_other>'] = len(self.word2idx)
+            self.word2idx['<UNK_{}>'.format(i)] = len(self.word2idx)
+        self.word2idx['<UNK_OTHER>'] = len(self.word2idx)
         count_dict = defaultdict(lambda: 0)
         for dataset in ['train', 'valid', 'test']:
            with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
@@ -112,8 +146,22 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--count', action='store_true')
     parser.add_argument('-doc_path', default='/nfs/Athena/roylu/raw_data/EnglishGigaWord/')
+    parser.add_argument('-get_vocab', action='store_true')
+    parser.add_argument('-load_vocab', action='store_true')
+    parser.add_argument('-dump_vocab', action='store_true')
+    parser.add_argument('-load_vocab_path', default='/home_local/jjery2243542/preprocessed/gigaword/vocab/8740_1000_20.pkl')
+    parser.add_argument('-dump_vocab_path', default='/home_local/jjery2243542/preprocessed/gigaword/vocab/8740_1000_20.pkl')
+    parser.add_argument('-dump_datasets', action='store_true')
+    parser.add_argument('-dump_datasets_path', default='/home_local/jjery2243542/preprocessed/datasets/giga_80_15.hdf5')
     args = parser.parse_args()
     preprocessor = Preprocessor()
     if args.count:
         preprocessor.count(args.doc_path)
-   
+    if args.get_vocab:
+        preprocessor.get_vocab(args.doc_path)
+    if args.load_vocab:
+        preprocessor.load_vocab(args.load_vocab_path)
+    if args.dump_vocab:
+        preprocessor.dump_vocab(args.dump_vocab_path)
+    if args.dump_datasets:
+        preprocessor.make_datasets(args.doc_path, args.dump_datasets_path, args.dump_datasets_path + '.unk.json')
