@@ -7,6 +7,7 @@ class PointerModel(object):
         self._hps = hps
         self._vocab = vocab
         self.build_graph()
+        
     
     def PointerDecoder(self, decoder_inputs, initial_state, encoder_states, cell, feed_previous=False):
         """
@@ -67,12 +68,12 @@ class PointerModel(object):
 
             def get_vocab_distr(cell_output, attn_context):
                 output_layer_input = tf.concat([cell_output, attn_context], axis=1)
-                output_layer_hidden = tf.layers.dense(output_layer_input, hidden_dim, name='output_projection')
+                output_layer_hidden = tf.layers.dense(output_layer_input, hidden_dim, activation=tf.nn.relu, name='output_projection')
                 vocab_distr = tf.layers.dense(output_layer_hidden, vocab_size, activation=tf.nn.softmax, name='output_layer')
                 return vocab_distr
                 
             decoder_outputs = []
-            coverage_loss = []
+            coverage_loss_list = []
             state = initial_state
             attn_coverage = tf.zeros([encoder_states.get_shape()[0].value, encoder_states.get_shape()[1].value], dtype=tf.float32)
             # do attention for the first time
@@ -88,19 +89,20 @@ class PointerModel(object):
                 cell_input = input_projection(inp, attn_context)
                 cell_output, state = cell(cell_input, state)
                 attn_weights, attn_context = attention(state.h, attn_coverage)
-                coverage_loss.append(tf.minimum(attn_coverage, attn_weights))
+                coverage_loss_list.append(tf.minimum(attn_coverage, attn_weights))
                 attn_coverage += attn_weights
 
                 p_gen = gen_layer(inp, state, attn_context)
                 output_t = p_gen * get_vocab_distr(cell_output, attn_context) + (1 - p_gen) * get_pointer_distr(attn_weights)
                 decoder_outputs.append(output_t)
+            coverage_loss = tf.stack(coverage_loss_list, axis=1)
             return decoder_outputs, coverage_loss
 
     def _add_placeholder(self):
         hps = self._hps
         self.x = tf.placeholder(tf.int32, [hps.batch_size, hps.encoder_length], name='input')
         self.kp = tf.placeholder(tf.float32, name='keep_prob')
-        self.y = tf.placeholder(tf.int32, [hps.batch_size, hps.encoder_length], name='target')
+        self.y = tf.placeholder(tf.int32, [hps.batch_size, hps.decoder_length], name='target')
 
     def _add_embedding(self):
         with tf.variable_scope('embedding') as scope:
@@ -110,13 +112,17 @@ class PointerModel(object):
         with tf.variable_scope('encoder'):
             fw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             fw_cell = tf.contrib.rnn.DropoutWrapper(
-                fw_cell, 
+                fw_cell,
+                input_keep_prob=self.kp,
                 output_keep_prob=self.kp,
+                state_keep_prob=self.kp
             )
             bw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             bw_cell = tf.contrib.rnn.DropoutWrapper(
                 bw_cell, 
+                input_keep_prob=self.kp,
                 output_keep_prob=self.kp,
+                state_keep_prob=self.kp
             )
             (encoder_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
                 fw_cell,
@@ -134,13 +140,13 @@ class PointerModel(object):
             new_c = tf.layers.dense(
                 old_c,
                 units=self._hps.hidden_dim,
-                activation=tf.nn.relu,
+                #activation=tf.nn.relu,
                 name='reduce_c'
             )
             new_h = tf.layers.dense(
                 old_h,
                 units=self._hps.hidden_dim,
-                activation=tf.nn.relu,
+                #activation=tf.nn.relu,
                 name='reduce_h'
             )
             return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
@@ -148,7 +154,26 @@ class PointerModel(object):
     def _add_decoder(self, inputs, initial_state, encoder_states, feed_previous=True):
         with tf.variable_scope('decoder') as scope:
             cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
+            cell = tf.contrib.rnn.DropoutWrapper(
+                cell,
+                input_keep_prob=self.kp,
+                output_keep_prob=self.kp,
+                state_keep_prob=self.kp
+            )
             return self.PointerDecoder(inputs, initial_state, encoder_states, cell, feed_previous)
+
+    def _add_train_op(self):
+        hps = self._hps
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        self._lr = tf.train.inverse_time_decay(
+            learning_rate=hps.lr, 
+            global_step=global_step, 
+            decay_steps=hps.decay_steps,
+            decay_rate=hps.decay_rate
+            name='learing_rate'
+        )
+        self._nll_opt = tf.train.GradientDescentOptimizer(learning_rate=self._lr).minimize(self._log_loss, global_step=global_step)
+        self._coverage_opt = tf.train.GradientDescentOptimizer(learning_rate=self._lr).minimize(self._coverage_loss, global_step=global_step)
 
     def build_graph(self):
         hps = self._hps
@@ -157,17 +182,55 @@ class PointerModel(object):
             self._add_placeholder()
             self._add_embedding()
             encoder_inputs = tf.nn.embedding_lookup(self.embedding_matrix, self.x)
-            encoder_inputs = tf.nn.dropout(encoder_inputs, self.kp)
             encoder_outputs, fw_state, bw_state = self._add_encoder(encoder_inputs)
             new_state = self._reduce_state(fw_state, bw_state)
             decoder_index_inputs = [tf.ones([hps.batch_size], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)
             decoder_embedding_inputs = [tf.nn.embedding_lookup(self.embedding_matrix, x) for x in decoder_index_inputs[:-1]]
-            decoder_embedding_inputs = [tf.nn.dropout(x, self.kp) for x in decoder_embedding_inputs]
-            train_output_list, coverage_loss_list = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, False)
+            train_outputs_list, coverage_loss = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, False)
+            self.train_logits = tf.stack(train_outputs_list, axis=1)
             scope.reuse_variables()
-            infer_output_list, _ = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, True)
+            infer_outputs_list, _ = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, True)
+            self.infer_logits = tf.stack(infer_outputs_list, axis=1)
+            self.infer_predicts = tf.argmax(self.infer_logits, axis=-1)
+
+        with tf.variable_scope('loss') as scope:
+            mask = tf.cast(tf.sign(self.y), dtype=tf.float32)
+            self._log_loss = tf.contrib.seq2seq.sequence_loss(
+                logits=self.train_logits,
+                targets=self.y,
+                weights=mask,
+            )
+            coverage_loss = coverage_loss * tf.expand_dims(mask, axis=2)
+            self._coverage_loss = tf.reduce_mean(coverage_loss)
+
+        with tf.variable_scope('training_opt') as scope:
+            self._add_train_op()
+
+    def train(self, sess, data_generator, log_file_path=None, ):
+        ## init
+        self.init()
+        for epoch in range(self._hps.nll_epochs):
+            for batch_x, batch_y in data_generator:
+                sess.run()
+
+    def init(self, sess):
+        sess.run(tf.global_variables_initializer())
+
+    def train_step(self, session, batch_x, batch_y, coverage=False):
+        if not coverage:
+            _, loss = session.run(
+                [self._nll_opt, self._log_loss], 
+                feed_dict={self.x:batch_x, self.y:batch_y, self.kp:self._hps.keep_prob}
+            )
+        else:
+            _, loss = session.run(
+                [self._coverage_opt, self._coverage_loss], 
+                feed_dict={self.x:batch_x, self.y:batch_y, self.kp:self._hps.keep_prob}
+            )
+        return loss
 
 if __name__ == '__main__':
     hps = Hps()
     vocab = Vocab()
-    Model = PointerModel(hps, vocab)
+    with tf.Session() as sess:
+        Model = PointerModel(hps, vocab)
