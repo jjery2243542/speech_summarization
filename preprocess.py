@@ -5,6 +5,7 @@ import os
 import string
 import argparse
 from collections import defaultdict
+import json
 
 class Preprocessor(object):
     def check_punc(self, s):
@@ -40,10 +41,10 @@ class Preprocessor(object):
                         title_cnt += 1
                     num_data += 1
         print('avg_content_length={}, avg_title_length={}'.format(content_word_cnt / num_data, title_word_cnt / num_data))
-        print('content_length < {} ={}, title_length < {} ={}'.format(content_threshold, content_cnt / num_data, title_threshold, title_cnt / num_data))
+        print('content_length < {} = {}, title_length < {} = {}'.format(content_threshold, content_cnt / num_data, title_threshold, title_cnt / num_data))
         return  
 
-    def make_datasets(self, root_dir, dump_path, unk_map_path, content_length=80, title_length=15, num_unks=20):
+    def make_datasets(self, root_dir, dump_path, unk_map_path, content_length=80, title_length=15, max_num_unks=20):
          '''
          root_dir-content-train.txt
                          -valid.txt
@@ -55,58 +56,71 @@ class Preprocessor(object):
          unk_map = {'train':[], 'valid':[], 'test':[]}
          with h5py.File(dump_path, 'w') as f_hdf5:
              for dataset in ['train', 'valid', 'test']:
-                grp = f_hdf5.create_group(dataset)
-                with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
-                    X = []
-                    Y = []
-                    for idx, (content, title) in enumerate(zip(f_content, f_title)):
-                        ## process content
-                        words = [word for word in content.strip().split() if self.check_punc(word)][:content_length - 1]
-                        x = []
-                        # mapping the unk to words
-                        unk = {}
-                        for word in words:
-                            if word in self.word2idx:
-                               x.append(self.word2idx[word]) 
-                            else:
-                                if len(unk) < num_unks:
-                                    token = '<UNK_{}>'.format(len(unk))
-                                    unk[word] = token
-                                else:
-                                    token = '<UNK_OTHER>'
-                                x.append(self.word2idx[token])
-                        ## append EOS symbol
-                        x.append(self.word2idx['<EOS>'])
-                        ## padding
-                        if len(x) < content_length:
-                            x.extend([self.word2idx['<PAD>'] for i in range(content_length - len(x))])
-                        ## process title
-                        words = [word for word in title.strip().split() if self.check_punc(word)][:title_length - 1]
-                        y = []
-                        for word in words:
-                            if word in self.word2idx:
-                                y.append(self.word2idx[word])
-                            elif word in unk:
-                                y.append(self.word2idx[unk[word]])
-                            else:
-                                y.append(self.word2idx['<UNK_OTHER>'])
-                        ## append EOS symbol
-                        y.append(self.word2idx['<EOS>'])
-                        ## padding
-                        if len(y) < title_length:
-                            y.extend([self.word2idx['<PAD>'] for i in range(title_length - len(y))])
-                        X.append(x)        
-                        Y.append(y)
-                    X = np.array(X, dtype=np.int32)
-                    Y = np.array(Y, dtype=np.int32)
-                    print('{} X_shape={}, Y_shape={}'.format(dataset, X.shape, Y.shape))
-                    dset = grp.create_dataset('x', data=X, dtype=np.int32)
-                    dset = grp.create_dataset('y', data=Y, dtype=np.int32)
+                 grp = f_hdf5.create_group(dataset)
+                 with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
+                     X = []
+                     Y = []
+                     num_unks = 0.
+                     for idx, (content, title) in enumerate(zip(f_content, f_title)):
+                         ## process content
+                         words = [word for word in content.strip().split() if self.check_punc(word)][:content_length - 1]
+                         x = []
+                         # mapping the unk to words
+                         unk = {}
+                         for word in words:
+                             if word in self.word2idx:
+                                x.append(self.word2idx[word]) 
+                             else:
+                                 num_unks += 1
+                                 if len(unk) < max_num_unks:
+                                     token = '<UNK_{}>'.format(len(unk))
+                                     unk[word] = token
+                                 else:
+                                     token = '<UNK_OTHER>'
+                                 x.append(self.word2idx[token])
+                         ## append EOS symbol
+                         x.append(self.word2idx['<EOS>'])
+                         ## padding
+                         if len(x) < content_length:
+                             x.extend([self.word2idx['<PAD>'] for i in range(content_length - len(x))])
+                         ## process title
+                         words = [word for word in title.strip().split() if self.check_punc(word)][:title_length - 1]
+                         y = []
+                         for word in words:
+                             if word in self.word2idx:
+                                 y.append(self.word2idx[word])
+                             elif word in unk:
+                                 y.append(self.word2idx[unk[word]])
+                             else:
+                                 y.append(self.word2idx['<UNK_OTHER>'])
+                         ## append EOS symbol
+                         y.append(self.word2idx['<EOS>'])
+                         ## padding
+                         if len(y) < title_length:
+                             y.extend([self.word2idx['<PAD>'] for i in range(title_length - len(y))])
+                         X.append(x)        
+                         Y.append(y)
+                         # append unk_map in a word to the mapping dict
+                         unk_map[dataset].append(unk)
+                     X = np.array(X, dtype=np.int32)
+                     Y = np.array(Y, dtype=np.int32)
+                     print('{} X_shape={}, Y_shape={}'.format(dataset, X.shape, Y.shape))
+                     print('num of unk_map in {} = {}'.format(dataset, len(unk_map[dataset])))
+                     print('avg_unk in a data pair = {}'.format(num_unks / (idx + 1)))
+                     dset = grp.create_dataset('x', data=X, dtype=np.int32)
+                     dset = grp.create_dataset('y', data=Y, dtype=np.int32)
+             with open(unk_map_path, 'w') as f_json:
+                 json.dump(unk_map, f_json, indent=4, separators=(',', ': '))
 
-    def dump_vocab(self, path):
+    def dump_vocab(self, root_dir):
         """
         dump vocab to disk
         """
+        dir_name = '{}_{}_{}'.format(len(self.word2idx), self.min_occur, self.num_unks)
+        dir_name = os.path.join(root_dir, dir_name)
+        if not os.path.isdir(dir_name):
+            os.mkdir(dir_name)
+        path = os.path.join(dir_name, 'vocab.pkl') 
         with open(path, 'wb') as f_out:
             pickle.dump(self.word2idx, f_out)
         print('dump vocab file to {}'.format(path))
@@ -116,7 +130,7 @@ class Preprocessor(object):
             self.word2idx = pickle.load(f_in)
         print('load vocab file from {}'.format(path))
 
-    def get_vocab(self, root_dir, min_occur=1000, num_unks=20):
+    def get_vocab(self, root_dir, min_occur=1500, num_unks=20):
         '''
         root_dir-content-train.txt
                         -valid.txt
@@ -125,6 +139,8 @@ class Preprocessor(object):
                       -valid.txt
                       -test.txt
         '''
+        self.min_occur = min_occur
+        self.num_unks = num_unks
         self.word2idx = {'<PAD>':0, '<BOS>':1, '<EOS>':2}
         # add unk to vocab
         for i in range(num_unks):
@@ -132,36 +148,40 @@ class Preprocessor(object):
         self.word2idx['<UNK_OTHER>'] = len(self.word2idx)
         count_dict = defaultdict(lambda: 0)
         for dataset in ['train', 'valid', 'test']:
-           with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
-               for content, title in zip(f_content, f_title):
-                   for word in content.strip().split():
-                       count_dict[word] += 1
-           for word in count_dict:
-               if count_dict[word] >= min_occur:
-                   self.word2idx[word] = len(self.word2idx)
+            with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
+                for content, title in zip(f_content, f_title):
+                    content_words = [word for word in content.strip().split() if self.check_punc(word)] 
+                    title_words = [word for word in title.strip().split() if self.check_punc(word)] 
+                    for word in content_words + title_words:
+                        count_dict[word] += 1
+            for word in count_dict:
+                if count_dict[word] >= min_occur:
+                    self.word2idx[word] = len(self.word2idx)
         print('vocab_size={}'.format(len(self.word2idx)))
         return
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--count', action='store_true')
-    parser.add_argument('-doc_path', default='/nfs/Athena/roylu/raw_data/EnglishGigaWord/')
-    parser.add_argument('-get_vocab', action='store_true')
-    parser.add_argument('-load_vocab', action='store_true')
-    parser.add_argument('-dump_vocab', action='store_true')
-    parser.add_argument('-load_vocab_path', default='/home_local/jjery2243542/preprocessed/gigaword/vocab/8740_1000_20.pkl')
-    parser.add_argument('-dump_vocab_path', default='/home_local/jjery2243542/preprocessed/gigaword/vocab/8740_1000_20.pkl')
-    parser.add_argument('-dump_datasets', action='store_true')
-    parser.add_argument('-dump_datasets_path', default='/home_local/jjery2243542/preprocessed/datasets/giga_80_15.hdf5')
+    parser.add_argument('-content_length', type=int, default=80)
+    parser.add_argument('-title_length', type=int, default=15)
+    parser.add_argument('-doc_path', default='/home/jjery2243542/datasets/gigaword')
+    parser.add_argument('--get_vocab', action='store_true')
+    parser.add_argument('--load_vocab', action='store_true')
+    parser.add_argument('--dump_vocab', action='store_true')
+    parser.add_argument('-load_vocab_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/vocab.pkl')
+    parser.add_argument('-dump_vocab_dir', default='/home/jjery2243542/datasets/gigaword/processed/datasets/')
+    parser.add_argument('--dump_datasets', action='store_true')
+    parser.add_argument('-dump_datasets_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5')
     args = parser.parse_args()
     preprocessor = Preprocessor()
     if args.count:
-        preprocessor.count(args.doc_path)
+        preprocessor.count(args.doc_path, args.content_length, args.title_length)
     if args.get_vocab:
         preprocessor.get_vocab(args.doc_path)
     if args.load_vocab:
         preprocessor.load_vocab(args.load_vocab_path)
     if args.dump_vocab:
-        preprocessor.dump_vocab(args.dump_vocab_path)
+        preprocessor.dump_vocab(args.dump_vocab_dir)
     if args.dump_datasets:
         preprocessor.make_datasets(args.doc_path, args.dump_datasets_path, args.dump_datasets_path + '.unk.json')
