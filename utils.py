@@ -3,54 +3,38 @@ import h5py
 import pickle
 import os
 from collections import defaultdict
+from collections import namedtuple
 import numpy as np
 
 class Hps(object):
-    def __init__(self,
-                 lr=0.3,
-                 hidden_dim=256,
-                 embedding_dim=300,
-                 keep_prob=0.8,
-                 batch_size=32,
-                 encoder_length=100,
-                 decoder_length=15
-                 nll_epochs=7,
-                 coverage_epochs=1):
-        self.lr = lr
-        self.hidden_dim = hidden_dim
-        self.embedding_dim = embedding_dim
-        self.keep_prob = keep_prob
-        self.batch_size = batch_size
-        self.encoder_length = encoder_length
-        self.decoder_length = decoder_length
-        self.nll_epochs = nll_epochs
-        self.coverage_epochs = coverage_epochs
+    def __init__(self):
+        self.hps = namedtuple('hps', [
+            'lr', 
+            'decay_step', 
+            'decay_rate', 
+            'hidden_dim', 
+            'embedding_dim', 
+            'keep_prob', 
+            'batch_size', 
+            'encoder_length', 
+            'decoder_length',
+            'nll_epochs',
+            'coverage_epochs']
+        )
+        default = [0.3, 10000, 0.95, 256, 300, 0.8, 32, 100, 15, 7, 1]
+        self._hps = self.hps._make(default)
+
+    def get_tuple(self):
+        return self._hps
 
     def load(self, path):
         with open(path, 'r') as f_json:
-            hps_json = json.load(f_json)
-        self.lr = hps_json['lr']
-        self.hidden_dim = hps_json['hidden_dim']
-        self.embedding_dim = hps_json['embedding_dim']
-        self.keep_prob = hps_json['keep_prob']
-        self.batch_size = hps_json['batch_size']
-        self.encoder_length = hps_json['encoder_length']
-        self.decoder_length = hps_json['decoder_length']
-        self.nll_epochs = hps_json['nll_epochs']
-        self.coverage_epochs = hps_json['coverage_epochs']
+            hps_dict = json.load(f_json)
+        self._hps = self.hps(**hps_dict)
 
     def dump(self, path):
-        hps_json = {
-            'lr':self.lr, 
-            'hidden_dim':self.hidden_dim,
-            'embedding_dim':self.embedding_dim,
-            'keep_prob':self.keep_prob,
-            'batch_size':self.batch_size,
-            'encoder_length':self.encoder_length,
-            'decoder_length':self.decoder_length,
-        }
         with open(path, 'w') as f_json:
-            json.dump(hps_json, f_json, indent=4, separators=(',', ': '))
+            json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
     def __init__(self, hdf5_path):
@@ -73,12 +57,21 @@ class Vocab(object):
         with open(load_vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
+
     def decode(self, idx_seqs):
         """
         input: idx sequences
         output: sentenences
         """
         for seq in idx_seqs:
+            print(seq)
+            
             
     def size(self):
         return len(self.word2idx)
+
+if __name__ == '__main__':
+    hps = Hps()
+    print(hps.get_tuple())
+    hps.load('test.json')
+    print(hps.get_tuple())
