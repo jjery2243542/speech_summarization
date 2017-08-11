@@ -37,41 +37,64 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path):
-        self.datasets = h5py.File(hdf5_path)
+    def __init__(self, hdf5_path='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5'):
+        self.datasets = h5py.File(hdf5_path, 'r')
 
     def make_batch(self, num_datapoints=None, batch_size=32, dataset_type='train'):
         x_path = dataset_type + '/x'
         y_path = dataset_type + '/y'
         if not num_datapoints:
             num_datapoints = self.datasets[x_path].shape[0]
-        for i in range(num_datapoints / batch_size + 1):
+        for i in range(num_datapoints // batch_size + 1):
             l = i * batch_size
-            r = (i + 1) * batch_size
+            r = min((i + 1) * batch_size, num_datapoints)
             batch_x = self.datasets[x_path][l:r]
             batch_y = self.datasets[y_path][l:r]
             yield batch_x, batch_y
 
 class Vocab(object):
-    def __init__(self, vocab_path):
-        with open(load_vocab_path, 'rb') as f_in:
+    def __init__(self, vocab_path='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/vocab.pkl'):
+        with open(vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
 
-    def decode(self, idx_seqs):
+    def decode(self, idx_seq, unk_map):
         """
-        input: idx sequences
-        output: sentenences
+        input: idx sequence
+        output: sentenence
         """
-        for seq in idx_seqs:
-            print(seq)
-            
+        words = []
+        # invert unk_map
+        unk2word = {v:k for k, v in unk_map.items()}
+        for idx in idx_seq:
+            word = self.idx2word[idx]
+            # check whether it's unk
+            if word in unk2word:
+                words.append(unk2word[word])
+            elif word not in ['<PAD>', '<BOS>', '<EOS>', '<UNK_OTHER>']:
+                words.append(word)
+        sent = ' '.join(words)
+        return sent
             
     def size(self):
         return len(self.word2idx)
 
 if __name__ == '__main__':
-    hps = Hps()
-    print(hps.get_tuple())
-    hps.load('test.json')
-    print(hps.get_tuple())
+    ## test hps
+    #hps = Hps()
+    #hps.dump('./hps/default.json')
+
+    ## test data_generator
+    dg = DataGenerator()
+    vocab = Vocab()
+    with open('/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5.unk.json', 'r') as f_json:
+        all_unk_map = json.load(f_json)
+    for i, (batch_x, batch_y) in enumerate(dg.make_batch(batch_size=5, num_datapoints=12, dataset_type='train')):
+        print(batch_x.shape, batch_y.shape)
+        for j, x in enumerate(batch_x):
+            print(vocab.decode(x, all_unk_map['train'][i * 5 + j]))
+        for j, y in enumerate(batch_y):
+            print(vocab.decode(y, all_unk_map['train'][i * 5 + j]))
+        if i > 5:
+            break
+        
