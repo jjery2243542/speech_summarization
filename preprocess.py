@@ -42,7 +42,27 @@ class Preprocessor(object):
                     num_data += 1
         print('avg_content_length={}, avg_title_length={}'.format(content_word_cnt / num_data, title_word_cnt / num_data))
         print('content_length < {} = {}, title_length < {} = {}'.format(content_threshold, content_cnt / num_data, title_threshold, title_cnt / num_data))
-        return  
+        return 
+
+    """
+    This method transfer text glove vectors to numpy array and dump to a file
+    input: glove vector text file path
+    """
+    def glove2npy(self, glove_path, npy_path):
+        emb = np.zeros([len(self.word2idx), 300], dtype=np.float32)
+        print(emb.shape)
+        word_cnt = 0.
+        with open(glove_path, 'r') as f_in:
+            for line in f_in:
+                items = line.strip().split()
+                word = items[0]
+                if word in self.word2idx:
+                    word_cnt += 1
+                    vector = np.array([float(element) for element in items[1:]], dtype=np.float32)
+                    word_idx = self.word2idx[word]
+                    emb[word_idx] += vector
+        np.savetxt(npy_path, emb)
+        print('{} word in glove'.format(word_cnt / len(self.word2idx)))
 
     def make_datasets(self, root_dir, dump_path, unk_map_path, content_length=80, title_length=15, max_num_unks=20):
          '''
@@ -130,7 +150,7 @@ class Preprocessor(object):
             self.word2idx = pickle.load(f_in)
         print('load vocab file from {}'.format(path))
 
-    def get_vocab(self, root_dir, min_occur=1500, num_unks=20):
+    def get_vocab(self, root_dir, min_occur=1500, num_unks=20, base_dict_path=None):
         '''
         root_dir-content-train.txt
                         -valid.txt
@@ -141,11 +161,15 @@ class Preprocessor(object):
         '''
         self.min_occur = min_occur
         self.num_unks = num_unks
-        self.word2idx = {'<PAD>':0, '<BOS>':1, '<EOS>':2}
-        # add unk to vocab
-        for i in range(num_unks):
-            self.word2idx['<UNK_{}>'.format(i)] = len(self.word2idx)
-        self.word2idx['<UNK_OTHER>'] = len(self.word2idx)
+        if not base_dict:
+            self.word2idx = {'<PAD>':0, '<BOS>':1, '<EOS>':2}
+            # add unk to vocab
+            for i in range(num_unks):
+                self.word2idx['<UNK_{}>'.format(i)] = len(self.word2idx)
+            self.word2idx['<UNK_OTHER>'] = len(self.word2idx)
+        else:
+            with open(base_dict, 'rb') as f_in:
+                self.word2idx = pickle.load(f_in)
         count_dict = defaultdict(lambda: 0)
         for dataset in ['train', 'valid', 'test']:
             with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
@@ -154,9 +178,9 @@ class Preprocessor(object):
                     title_words = [word for word in title.strip().split() if self.check_punc(word)] 
                     for word in content_words + title_words:
                         count_dict[word] += 1
-            for word in count_dict:
-                if count_dict[word] >= min_occur:
-                    self.word2idx[word] = len(self.word2idx)
+        for word in count_dict:
+            if count_dict[word] >= min_occur:
+                self.word2idx[word] = len(self.word2idx)
         print('vocab_size={}'.format(len(self.word2idx)))
         return
 
@@ -170,18 +194,29 @@ if __name__ == '__main__':
     parser.add_argument('--load_vocab', action='store_true')
     parser.add_argument('--dump_vocab', action='store_true')
     parser.add_argument('-load_vocab_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/vocab.pkl')
+    parser.add_argument('-min_occur', type=int, default=100)
     parser.add_argument('-dump_vocab_dir', default='/home/jjery2243542/datasets/gigaword/processed/datasets/')
     parser.add_argument('--dump_datasets', action='store_true')
     parser.add_argument('-dump_datasets_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5')
+    parser.add_argument('-length', nargs='*', type=int, default=[80, 15])
+    parser.add_argument('--load_glove', action='store_true')
+    parser.add_argument('-load_glove_path', default='/home/jjery2243542/pretrained/glove/glove.840B.300d.txt')
+    parser.add_argument('--dump_glove', action='store_true')
+    parser.add_argument('-dump_glove_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/glove.npy')
+
     args = parser.parse_args()
     preprocessor = Preprocessor()
     if args.count:
         preprocessor.count(args.doc_path, args.content_length, args.title_length)
     if args.get_vocab:
-        preprocessor.get_vocab(args.doc_path)
+        # extend vocab
+        if args.load_vocab:
+            preprocessor.get_vocab(args.doc_path, args.load_vocab_path)
     if args.load_vocab:
         preprocessor.load_vocab(args.load_vocab_path)
     if args.dump_vocab:
         preprocessor.dump_vocab(args.dump_vocab_dir)
     if args.dump_datasets:
-        preprocessor.make_datasets(args.doc_path, args.dump_datasets_path, args.dump_datasets_path + '.unk.json')
+        preprocessor.make_datasets(args.doc_path, args.dump_datasets_path, args.dump_datasets_path + '.unk.json', content_length=args.length[0], title_length=args.length[1])
+    if args.load_glove and args.dump_glove:
+        preprocessor.glove2npy(args.load_glove_path, args.dump_glove_path)

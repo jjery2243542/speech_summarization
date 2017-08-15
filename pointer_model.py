@@ -1,14 +1,15 @@
 import tensorflow as tf
 from utils import Hps
 from utils import Vocab
+import time
 
 class PointerModel(object):
     def __init__(self, hps, vocab):
         self._hps = hps
         self._vocab = vocab
         self.build_graph()
+        self.sess = tf.Session()
         
-    
     def PointerDecoder(self, decoder_inputs, initial_state, encoder_states, cell, feed_previous=False):
         """
         encoder_states shape = [batch_size, length, hidden_dim]
@@ -106,7 +107,7 @@ class PointerModel(object):
 
     def _add_embedding(self):
         with tf.variable_scope('embedding') as scope:
-            self.embedding_matrix = tf.get_variable('embedding', [self._vocab.size(), self._hps.embedding_dim], dtype=tf.float32)
+            self.embedding_matrix = tf.get_variable('embedding', [self._vocab.size(), self._hps.embedding_dim], dtype=tf.float32, trainable=False)
 
     def _add_encoder(self, encoder_inputs):
         with tf.variable_scope('encoder'):
@@ -169,7 +170,7 @@ class PointerModel(object):
             learning_rate=hps.lr, 
             global_step=global_step, 
             decay_steps=hps.decay_steps,
-            decay_rate=hps.decay_rate
+            decay_rate=hps.decay_rate,
             name='learing_rate'
         )
         self._nll_opt = tf.train.GradientDescentOptimizer(learning_rate=self._lr).minimize(self._log_loss, global_step=global_step)
@@ -206,31 +207,45 @@ class PointerModel(object):
         with tf.variable_scope('training_opt') as scope:
             self._add_train_op()
 
-    def train(self, sess, data_generator, log_file_path=None, ):
-        ## init
-        self.init()
+    def load_embedding(self, sess):
+        sess.run()
+
+    def train(self, sess, data_generator, log_file_path=None):
+        start_time = time.time()
+        print('NLL section')
         for epoch in range(self._hps.nll_epochs):
-            for batch_x, batch_y in data_generator:
-                sess.run()
+            total_loss = 0.
+            for i, (batch_x, batch_y) in enumerate(data_generator):
+                loss, lr = self.train_step(sess, batch_x, batch_y, coverage=False)
+                total_loss += loss
+                if (i + 1) % 1000 == 0:
+                    print('\nepoch [%02d/%02d], step [%06d/%06d], lr=%.4f, loss: %.4f, time: %05d\r' % (epoch + 1, self._hps.nll_epochs, lr, total_loss / (i + 1), time.time() - start_time), end='')
+            if log_file_path:
+                with open(log_file_path, 'a') a f_log:
+                    f_log.write('epoch: %02d, avg_train_loss: %.4f' % (epoch + 1, total_loss / (i + 1)))
 
-    def init(self, sess):
+    def valid(self, sess, data_generator):
+        for batch_x, batch_y in data_generator:
+            loss = self.
+
+    def init(self, sess, pretrain=True):
         sess.run(tf.global_variables_initializer())
-
-    def train_step(self, session, batch_x, batch_y, coverage=False):
+        if pretrain:
+            # load pretrain glove vector
+    def valid_step()
+    def train_step(self, batch_x, batch_y, coverage=False):
         if not coverage:
-            _, loss = session.run(
-                [self._nll_opt, self._log_loss], 
+            _, loss, lr = self.sess.run(
+                [self._nll_opt, self._log_loss, self._lr], 
                 feed_dict={self.x:batch_x, self.y:batch_y, self.kp:self._hps.keep_prob}
             )
         else:
-            _, loss = session.run(
-                [self._coverage_opt, self._coverage_loss], 
+            _, loss, lr = self.sess.run(
+                [self._coverage_opt, self._coverage_loss, self._lr], 
                 feed_dict={self.x:batch_x, self.y:batch_y, self.kp:self._hps.keep_prob}
             )
-        return loss
+        return loss, lr
 
 if __name__ == '__main__':
     hps = Hps()
     vocab = Vocab()
-    with tf.Session() as sess:
-        Model = PointerModel(hps, vocab)

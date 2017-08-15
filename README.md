@@ -10,3 +10,5 @@ This repo contain the code for speech_summarization project.
 - [ ] inference part model
 - [ ] MFCC extractor
 - [ ] model with mfcc inputs
+- [ ] spoken document tokenize(coreNLP)
+- [ ] add extend dictionary functionality to preprocessor
