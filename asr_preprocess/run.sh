@@ -19,6 +19,6 @@ python3 depunc.py $token_dir/title.txt $depunc_dir/title.txt
 cp $token_dir/content.txt $depunc_dir/content.txt
 cp $token_dir/index.txt $depunc_dir/index.txt
 # set condition
-python3 condition.py $token_dir $condition_dir
+python3 condition.py $depunc_dir $condition_dir
 # split to train, valid, test
 python3 split.py $condition_dir $split_dir 0.8,0.1,0.1
