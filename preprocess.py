@@ -8,6 +8,8 @@ from collections import defaultdict
 import json
 
 class Preprocessor(object):
+    def __init__(self):
+        self.word2idx = None
     def check_punc(self, s):
         """
         check whether the whole word is punctuation
@@ -92,9 +94,11 @@ class Preprocessor(object):
                                 x.append(self.word2idx[word]) 
                              else:
                                  num_unks += 1
-                                 if len(unk) < max_num_unks:
+                                 if len(unk) < max_num_unks and word not in unk:
                                      token = '<UNK_{}>'.format(len(unk))
                                      unk[word] = token
+                                 elif len(unk) < max_num_unks:
+                                     token = unk[word]
                                  else:
                                      token = '<UNK_OTHER>'
                                  x.append(self.word2idx[token])
@@ -150,7 +154,7 @@ class Preprocessor(object):
             self.word2idx = pickle.load(f_in)
         print('load vocab file from {}'.format(path))
 
-    def get_vocab(self, root_dir, min_occur=1500, num_unks=20, base_dict_path=None):
+    def get_vocab(self, root_dir, min_occur, num_unks=20):
         '''
         root_dir-content-train.txt
                         -valid.txt
@@ -161,16 +165,14 @@ class Preprocessor(object):
         '''
         self.min_occur = min_occur
         self.num_unks = num_unks
-        if not base_dict:
+        if not self.word2idx:
             self.word2idx = {'<PAD>':0, '<BOS>':1, '<EOS>':2}
             # add unk to vocab
             for i in range(num_unks):
                 self.word2idx['<UNK_{}>'.format(i)] = len(self.word2idx)
             self.word2idx['<UNK_OTHER>'] = len(self.word2idx)
-        else:
-            with open(base_dict, 'rb') as f_in:
-                self.word2idx = pickle.load(f_in)
         count_dict = defaultdict(lambda: 0)
+        total_cnt = 0.
         for dataset in ['train', 'valid', 'test']:
             with open(os.path.join(root_dir, 'content/' + dataset + '.txt')) as f_content, open(os.path.join(root_dir, 'title/' + dataset + '.txt')) as f_title:
                 for content, title in zip(f_content, f_title):
@@ -178,24 +180,27 @@ class Preprocessor(object):
                     title_words = [word for word in title.strip().split() if self.check_punc(word)] 
                     for word in content_words + title_words:
                         count_dict[word] += 1
+        in_vocab_word_cnt = 0.
         for word in count_dict:
-            if count_dict[word] >= min_occur:
+            if count_dict[word] >= min_occur and word not in self.word2idx:
                 self.word2idx[word] = len(self.word2idx)
+            if word in self.word2idx:
+                in_vocab_word_cnt += count_dict[word]
+            total_cnt += count_dict[word]
+        print('in_vocab_percentage={}'.format(in_vocab_word_cnt / total_cnt))
         print('vocab_size={}'.format(len(self.word2idx)))
         return
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--count', action='store_true')
-    parser.add_argument('-content_length', type=int, default=80)
-    parser.add_argument('-title_length', type=int, default=15)
-    parser.add_argument('-doc_path', default='/home/jjery2243542/datasets/gigaword')
+    parser.add_argument('-doc_path', default='/home/jjery2243542/datasets/cnn_news/processed/split/')
     parser.add_argument('--get_vocab', action='store_true')
     parser.add_argument('--load_vocab', action='store_true')
     parser.add_argument('--dump_vocab', action='store_true')
     parser.add_argument('-load_vocab_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/vocab.pkl')
     parser.add_argument('-min_occur', type=int, default=100)
-    parser.add_argument('-dump_vocab_dir', default='/home/jjery2243542/datasets/gigaword/processed/datasets/')
+    parser.add_argument('-dump_vocab_dir', default='/home/jjery2243542/datasets/cnn_news/processed/datasets')
     parser.add_argument('--dump_datasets', action='store_true')
     parser.add_argument('-dump_datasets_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5')
     parser.add_argument('-length', nargs='*', type=int, default=[80, 15])
@@ -207,13 +212,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     preprocessor = Preprocessor()
     if args.count:
-        preprocessor.count(args.doc_path, args.content_length, args.title_length)
-    if args.get_vocab:
-        # extend vocab
-        if args.load_vocab:
-            preprocessor.get_vocab(args.doc_path, args.load_vocab_path)
+        preprocessor.count(args.doc_path, args.length[0], args.length[1])
     if args.load_vocab:
         preprocessor.load_vocab(args.load_vocab_path)
+    if args.get_vocab:
+        # extend vocab
+        preprocessor.get_vocab(args.doc_path, min_occur=args.min_occur)
     if args.dump_vocab:
         preprocessor.dump_vocab(args.dump_vocab_dir)
     if args.dump_datasets:

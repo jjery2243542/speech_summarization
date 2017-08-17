@@ -37,7 +37,7 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5'):
+    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/cnn_120_15.hdf5'):
         self.datasets = h5py.File(hdf5_path, 'r')
 
     def make_batch(self, num_datapoints=None, batch_size=32, dataset_type='train'):
@@ -53,7 +53,7 @@ class DataGenerator(object):
             yield batch_x, batch_y
 
 class Vocab(object):
-    def __init__(self, vocab_path='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/vocab.pkl'):
+    def __init__(self, vocab_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/vocab.pkl'):
         with open(vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
@@ -71,7 +71,9 @@ class Vocab(object):
             # check whether it's unk
             if word in unk2word:
                 words.append(unk2word[word])
-            elif word not in ['<PAD>', '<BOS>', '<EOS>', '<UNK_OTHER>']:
+            elif word == '<EOS>':
+                break
+            elif word not in ['<PAD>', '<BOS>', '<UNK_OTHER>']:
                 words.append(word)
         sent = ' '.join(words)
         return sent
@@ -87,7 +89,7 @@ if __name__ == '__main__':
     ## test data_generator
     dg = DataGenerator()
     vocab = Vocab()
-    with open('/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/80_15.hdf5.unk.json', 'r') as f_json:
+    with open('/home/jjery2243542/datasets/summary/structured/15673_100_20/cnn_120_15.hdf5.unk.json', 'r') as f_json:
         all_unk_map = json.load(f_json)
     for i, (batch_x, batch_y) in enumerate(dg.make_batch(batch_size=5, num_datapoints=12, dataset_type='train')):
         print(batch_x.shape, batch_y.shape)
