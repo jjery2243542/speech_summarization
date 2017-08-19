@@ -37,7 +37,7 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/cnn_120_15.hdf5'):
+    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5'):
         self.datasets = h5py.File(hdf5_path, 'r')
 
     def make_batch(self, num_datapoints=None, batch_size=32, dataset_type='train'):
@@ -53,11 +53,25 @@ class DataGenerator(object):
             yield batch_x, batch_y
 
 class Vocab(object):
-    def __init__(self, vocab_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/vocab.pkl'):
+    def __init__(self, vocab_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/vocab.pkl', unk_map_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5.unk.json'):
         with open(vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
+        # <PAD>, <BOS>, <EOS>
+        self.num_symbols = 3
+        self.num_unks = 20
 
+        # read unk_map json
+        with open(unk_map_path, 'r') as f_json:
+            self.all_unk_map = json.load(f_json)
+
+    def decode_batch(self, idx_seqs, batch_idx, batch_size, dataset_type='valid'):
+        sents = []
+        for i, idx_seq in enumerate(idx_seqs):
+            sent = self.decode(idx_seq, self.all_unk_map[dataset_type][batch_idx * batch_size + i])
+            sents.append(sent)
+        return sents
+        
     def decode(self, idx_seq, unk_map):
         """
         input: idx sequence
@@ -89,14 +103,9 @@ if __name__ == '__main__':
     ## test data_generator
     dg = DataGenerator()
     vocab = Vocab()
-    with open('/home/jjery2243542/datasets/summary/structured/15673_100_20/cnn_120_15.hdf5.unk.json', 'r') as f_json:
-        all_unk_map = json.load(f_json)
-    for i, (batch_x, batch_y) in enumerate(dg.make_batch(batch_size=5, num_datapoints=12, dataset_type='train')):
-        print(batch_x.shape, batch_y.shape)
-        for j, x in enumerate(batch_x):
-            print(vocab.decode(x, all_unk_map['train'][i * 5 + j]))
-        for j, y in enumerate(batch_y):
-            print(vocab.decode(y, all_unk_map['train'][i * 5 + j]))
+    for i, (batch_x, batch_y) in enumerate(dg.make_batch(batch_size=5, num_datapoints=12, dataset_type='valid')):
+        print(vocab.decode_batch(batch_x, i, 5))
+        print(vocab.decode_batch(batch_y, i, 5))
         if i > 5:
             break
         
