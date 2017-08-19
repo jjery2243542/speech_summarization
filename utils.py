@@ -65,6 +65,12 @@ class Vocab(object):
         with open(unk_map_path, 'r') as f_json:
             self.all_unk_map = json.load(f_json)
 
+    def batch_bleu(self, hypo_sents, ref_sents):
+        # turn to bleu format
+        hyp = [sent.strip().split() for sent in hypo_sents]
+        ref = [[sent.strip().split()] for sent in ref_sents]
+        return nltk.translate.bleu_score.corpus_bleu(ref, hyp))
+        
     def decode_batch(self, idx_seqs, batch_idx, batch_size, dataset_type='valid'):
         sents = []
         for i, idx_seq in enumerate(idx_seqs):

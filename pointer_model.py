@@ -1,4 +1,6 @@
 import tensorflow as tf
+import numpy as np
+import pandas as pd
 from utils import Hps
 from utils import Vocab
 import time
@@ -106,8 +108,12 @@ class PointerModel(object):
         self.y = tf.placeholder(tf.int32, [hps.batch_size, hps.decoder_length], name='target')
 
     def _add_embedding(self):
+        vocab = self._vocab
+        embedding_dim = self._hps.embedding_dim
         with tf.variable_scope('embedding') as scope:
-            self.embedding_matrix = tf.get_variable('embedding', [self._vocab.size(), self._hps.embedding_dim], dtype=tf.float32, trainable=False)
+            word_matrix = tf.get_variable('embedding', [vocab.size() - (vocab.num_symbols + vocab.num_unks), embedding_dim], dtype=tf.float32, trainable=False)
+            symbol_matrix = tf.get_variable('symbols', [vocab.num_symbols + vocab.num_unks, embedding_dim], dtype=tf.float32)
+            self.embedding_matrix = tf.concat([symbol_matrix, word_matrix], axis=0)
 
     def _add_encoder(self, encoder_inputs):
         with tf.variable_scope('encoder'):
@@ -201,38 +207,70 @@ class PointerModel(object):
                 targets=self.y,
                 weights=mask,
             )
+            self._valid_log_loss = tf.contrib.seq2seq.sequence_loss(
+                logits=self.infer_logits,
+                targets=self.y,
+                weights=mask,
+            )
             coverage_loss = coverage_loss * tf.expand_dims(mask, axis=2)
             self._coverage_loss = tf.reduce_mean(coverage_loss)
 
         with tf.variable_scope('training_opt') as scope:
             self._add_train_op()
 
-    def load_embedding(self, sess):
-        sess.run()
+    def load_embedding(self, npy_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy'):
+        glove_vectors = np.loadtxt(npy_path)
+        self.sess.run(tf.assign(self.embedding_matrix, glove_vectors))
+        print('pretrain vectors loaded')
 
-    def train(self, sess, data_generator, log_file_path=None):
+    def train(self, data_generator, log_file_path):
+        # init iterator
+        train_iter = data_generator(batch_size=self_hps.batch_size, dataset_type='train')
+        if valid_partial:
+            valid_iter = data_generator(num_datapoints=10000, batch_size=1000, dataset_type='valid')
+        else:
+            valid_iter = data_generator(batch_size=1000, dataset_type='valid')
+        # calculate time
         start_time = time.time()
+        # create log df
+        log_df = pd.DataFrame(columns=['epoch', 'coverage', 'train_loss', 'val_loss', 'bleu_score'])
         print('NLL section')
         for epoch in range(self._hps.nll_epochs):
             total_loss = 0.
             for i, (batch_x, batch_y) in enumerate(data_generator):
-                loss, lr = self.train_step(sess, batch_x, batch_y, coverage=False)
+                loss, lr = self.train_step(batch_x, batch_y, coverage=False)
                 total_loss += loss
                 if (i + 1) % 1000 == 0:
                     print('\nepoch [%02d/%02d], step [%06d/%06d], lr=%.4f, loss: %.4f, time: %05d\r' % (epoch + 1, self._hps.nll_epochs, lr, total_loss / (i + 1), time.time() - start_time), end='')
-            if log_file_path:
-                with open(log_file_path, 'a') a f_log:
-                    f_log.write('epoch: %02d, avg_train_loss: %.4f' % (epoch + 1, total_loss / (i + 1)))
+            val_loss, bleu_score = self.valid()
 
-    def valid(self, sess, data_generator):
-        for batch_x, batch_y in data_generator:
-            loss = self.
+    def valid(self, iterator, dataset_type='valid'):
+        vocab = self._vocab
+        total_loss = 0. 
+        total_bleu = 0.
+        for i, (batch_x, batch_y) in enumerate(iterator):
+            loss, predict += self.valid_step(batch_x, batch_y)
+            total_loss += loss
+            predict_sents = vocab.decode_batch(predict, i, 1000)
+            gt_sents = vocab.decode_batch(batch_y, i, 1000)
+            bleu = vocab.batch_bleu(predict_sents, gt_sents)
+            total_bleu +== bleu
+        avg_loss = total_loss / (i + 1)
+        avg_bleu = total_bleu / (i + 1)
+        return avg_loss, avg_bleu 
 
-    def init(self, sess, pretrain=True):
-        sess.run(tf.global_variables_initializer())
+    def init(self, pretrain=True):
+        self.sess.run(tf.global_variables_initializer())
         if pretrain:
             # load pretrain glove vector
-    def valid_step()
+
+    def valid_step(self, batch_x, batch_y):
+        loss, predicts = self.sess.run(
+            [self._valid_log_loss, self.infer_predicts],
+            feed_dict={self.x:batch_x, self.y:batch_y, self.kp:1.0}
+        )
+        return loss, predicts
+
     def train_step(self, batch_x, batch_y, coverage=False):
         if not coverage:
             _, loss, lr = self.sess.run(
