@@ -259,10 +259,11 @@ class PointerModel(object):
         avg_bleu = total_bleu / (i + 1)
         return avg_loss, avg_bleu 
 
-    def init(self, pretrain=True):
+    def init(self, npy_path=None, pretrain=True):
         self.sess.run(tf.global_variables_initializer())
         if pretrain:
             # load pretrain glove vector
+            emb = np.loadtxt(npy_path)
 
     def valid_step(self, batch_x, batch_y):
         loss, predicts = self.sess.run(

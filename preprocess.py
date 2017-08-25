@@ -51,18 +51,19 @@ class Preprocessor(object):
     input: glove vector text file path
     """
     def glove2npy(self, glove_path, npy_path):
-        emb = np.zeros([len(self.word2idx), 300], dtype=np.float32)
+        emb = np.random.uniform(low=-0.1, high=0.1, size=[len(self.word2idx), 300])
         print(emb.shape)
         word_cnt = 0.
         with open(glove_path, 'r') as f_in:
             for line in f_in:
-                items = line.strip().split()
+                items = line.strip().split(' ')
                 word = items[0]
                 if word in self.word2idx:
                     word_cnt += 1
                     vector = np.array([float(element) for element in items[1:]], dtype=np.float32)
                     word_idx = self.word2idx[word]
-                    emb[word_idx] += vector
+                    emb[word_idx] = vector
+                    
         np.savetxt(npy_path, emb)
         print('{} word in glove'.format(word_cnt / len(self.word2idx)))
 
@@ -198,7 +199,7 @@ if __name__ == '__main__':
     parser.add_argument('--get_vocab', action='store_true')
     parser.add_argument('--load_vocab', action='store_true')
     parser.add_argument('--dump_vocab', action='store_true')
-    parser.add_argument('-load_vocab_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/vocab.pkl')
+    parser.add_argument('-load_vocab_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/vocab.pkl')
     parser.add_argument('-min_occur', type=int, default=100)
     parser.add_argument('-dump_vocab_dir', default='/home/jjery2243542/datasets/cnn_news/processed/datasets')
     parser.add_argument('--dump_datasets', action='store_true')
@@ -207,7 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_glove', action='store_true')
     parser.add_argument('-load_glove_path', default='/home/jjery2243542/pretrained/glove/glove.840B.300d.txt')
     parser.add_argument('--dump_glove', action='store_true')
-    parser.add_argument('-dump_glove_path', default='/home/jjery2243542/datasets/gigaword/processed/datasets/8252_1500_20/glove.npy')
+    parser.add_argument('-dump_glove_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy')
 
     args = parser.parse_args()
     preprocessor = Preprocessor()
