@@ -2,13 +2,13 @@
 This repo contain the code for speech_summarization project.
 
 ## TODO
-- [ ] glove preprocess
-- [ ] glove load
-- [ ] process vocab files
-- [ ] process text files to hdf5 file
+- [x] glove preprocess
+- [x] glove load
+- [x] process vocab files
+- [x] process text files to hdf5 file
 - [ ] training part model
 - [ ] inference part model
-- [ ] MFCC extractor
+- [x] MFCC extractor
 - [ ] model with mfcc inputs
-- [ ] spoken document tokenize(coreNLP)
-- [ ] add extend dictionary functionality to preprocessor
+- [x] spoken document tokenize(coreNLP)
+- [x] add extend dictionary functionality to preprocessor
