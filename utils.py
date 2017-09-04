@@ -5,12 +5,14 @@ import os
 from collections import defaultdict
 from collections import namedtuple
 import numpy as np
+import nltk
+import math
 
 class Hps(object):
     def __init__(self):
         self.hps = namedtuple('hps', [
             'lr', 
-            'decay_step', 
+            'decay_steps', 
             'decay_rate', 
             'hidden_dim', 
             'embedding_dim', 
@@ -21,7 +23,7 @@ class Hps(object):
             'nll_epochs',
             'coverage_epochs']
         )
-        default = [0.3, 10000, 0.95, 256, 300, 0.8, 32, 100, 15, 7, 1]
+        default = [0.15, 10000, 0.95, 512, 300, 0.8, 32, 80, 15, 7, 1]
         self._hps = self.hps._make(default)
 
     def get_tuple(self):
@@ -40,12 +42,15 @@ class DataGenerator(object):
     def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5'):
         self.datasets = h5py.File(hdf5_path, 'r')
 
+    def size(self, dataset_type='train'):
+        return self.datasets[dataset_type + '/x'].shape[0]
+
     def make_batch(self, num_datapoints=None, batch_size=32, dataset_type='train'):
         x_path = dataset_type + '/x'
         y_path = dataset_type + '/y'
         if not num_datapoints:
             num_datapoints = self.datasets[x_path].shape[0]
-        for i in range(num_datapoints // batch_size + 1):
+        for i in range(math.ceil(num_datapoints / batch_size)):
             l = i * batch_size
             r = min((i + 1) * batch_size, num_datapoints)
             batch_x = self.datasets[x_path][l:r]
@@ -69,7 +74,7 @@ class Vocab(object):
         # turn to bleu format
         hyp = [sent.strip().split() for sent in hypo_sents]
         ref = [[sent.strip().split()] for sent in ref_sents]
-        return nltk.translate.bleu_score.corpus_bleu(ref, hyp))
+        return nltk.translate.bleu_score.corpus_bleu(ref, hyp)
         
     def decode_batch(self, idx_seqs, batch_idx, batch_size, dataset_type='valid'):
         sents = []

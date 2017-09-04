@@ -1,9 +1,10 @@
 import tensorflow as tf
 import numpy as np
-import pandas as pd
 from utils import Hps
 from utils import Vocab
+from utils import DataGenerator
 import time
+import argparse
 
 class PointerModel(object):
     def __init__(self, hps, vocab):
@@ -11,6 +12,7 @@ class PointerModel(object):
         self._vocab = vocab
         self.build_graph()
         self.sess = tf.Session()
+        self.saver = tf.train.Saver(max_to_keep=2)
         
     def PointerDecoder(self, decoder_inputs, initial_state, encoder_states, cell, feed_previous=False):
         """
@@ -78,7 +80,7 @@ class PointerModel(object):
             decoder_outputs = []
             coverage_loss_list = []
             state = initial_state
-            attn_coverage = tf.zeros([encoder_states.get_shape()[0].value, encoder_states.get_shape()[1].value], dtype=tf.float32)
+            attn_coverage = tf.zeros([self.batch_size_tensor, encoder_states.get_shape()[1].value], dtype=tf.float32)
             # do attention for the first time
             attn_weights, attn_context = attention(state.h, attn_coverage)
             for i in range(len(decoder_inputs)):
@@ -103,9 +105,10 @@ class PointerModel(object):
 
     def _add_placeholder(self):
         hps = self._hps
-        self.x = tf.placeholder(tf.int32, [hps.batch_size, hps.encoder_length], name='input')
+        self.x = tf.placeholder(tf.int32, [None, hps.encoder_length], name='input')
         self.kp = tf.placeholder(tf.float32, name='keep_prob')
-        self.y = tf.placeholder(tf.int32, [hps.batch_size, hps.decoder_length], name='target')
+        self.y = tf.placeholder(tf.int32, [None, hps.decoder_length], name='target')
+        self.batch_size_tensor = tf.shape(self.x)[0]
 
     def _add_embedding(self):
         vocab = self._vocab
@@ -120,15 +123,15 @@ class PointerModel(object):
             fw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             fw_cell = tf.contrib.rnn.DropoutWrapper(
                 fw_cell,
-                input_keep_prob=self.kp,
-                output_keep_prob=self.kp,
+                #input_keep_prob=self.kp,
+                #output_keep_prob=self.kp,
                 state_keep_prob=self.kp
             )
             bw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             bw_cell = tf.contrib.rnn.DropoutWrapper(
                 bw_cell, 
-                input_keep_prob=self.kp,
-                output_keep_prob=self.kp,
+                #input_keep_prob=self.kp,
+                #output_keep_prob=self.kp,
                 state_keep_prob=self.kp
             )
             (encoder_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
@@ -143,7 +146,9 @@ class PointerModel(object):
     def _reduce_state(self, fw_state, bw_state):
         with tf.variable_scope('reduce') as scope:
             old_c = tf.concat(values=[fw_state.c, bw_state.c], axis=1)
+            print(old_c)
             old_h = tf.concat(values=[fw_state.h, bw_state.h], axis=1)
+            print(old_h)
             new_c = tf.layers.dense(
                 old_c,
                 units=self._hps.hidden_dim,
@@ -163,8 +168,8 @@ class PointerModel(object):
             cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             cell = tf.contrib.rnn.DropoutWrapper(
                 cell,
-                input_keep_prob=self.kp,
-                output_keep_prob=self.kp,
+                #input_keep_prob=self.kp,
+                #output_keep_prob=self.kp,
                 state_keep_prob=self.kp
             )
             return self.PointerDecoder(inputs, initial_state, encoder_states, cell, feed_previous)
@@ -172,7 +177,7 @@ class PointerModel(object):
     def _add_train_op(self):
         hps = self._hps
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        self._lr = tf.train.inverse_time_decay(
+        self._lr = tf.train.exponential_decay(
             learning_rate=hps.lr, 
             global_step=global_step, 
             decay_steps=hps.decay_steps,
@@ -191,7 +196,7 @@ class PointerModel(object):
             encoder_inputs = tf.nn.embedding_lookup(self.embedding_matrix, self.x)
             encoder_outputs, fw_state, bw_state = self._add_encoder(encoder_inputs)
             new_state = self._reduce_state(fw_state, bw_state)
-            decoder_index_inputs = [tf.ones([hps.batch_size], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)
+            decoder_index_inputs = [tf.ones([self.batch_size_tensor], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)
             decoder_embedding_inputs = [tf.nn.embedding_lookup(self.embedding_matrix, x) for x in decoder_index_inputs[:-1]]
             train_outputs_list, coverage_loss = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, False)
             self.train_logits = tf.stack(train_outputs_list, axis=1)
@@ -220,57 +225,63 @@ class PointerModel(object):
 
     def load_embedding(self, npy_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy'):
         glove_vectors = np.loadtxt(npy_path)
-        self.sess.run(tf.assign(self.embedding_matrix, glove_vectors))
+        self.sess.run(self.embedding_matrix, feed_dict={self.embedding_matrix:glove_vectors})
         print('pretrain vectors loaded')
 
-    def train(self, data_generator, log_file_path):
+    def save_model(self, path, epoch):
+        self.saver.save(self.sess, path, global_step=epoch)
+        
+    def train(self, data_generator, log_file_path, model_path, valid_partial=False):
         # init iterator
-        train_iter = data_generator(batch_size=self_hps.batch_size, dataset_type='train')
-        if valid_partial:
-            valid_iter = data_generator(num_datapoints=10000, batch_size=1000, dataset_type='valid')
-        else:
-            valid_iter = data_generator(batch_size=1000, dataset_type='valid')
+        print('start training...')
         # calculate time
         start_time = time.time()
         # create log df
-        log_df = pd.DataFrame(columns=['epoch', 'coverage', 'train_loss', 'val_loss', 'bleu_score'])
-        print('NLL section')
-        for epoch in range(self._hps.nll_epochs):
-            total_loss = 0.
-            for i, (batch_x, batch_y) in enumerate(data_generator):
-                loss, lr = self.train_step(batch_x, batch_y, coverage=False)
-                total_loss += loss
-                if (i + 1) % 1000 == 0:
-                    print('\nepoch [%02d/%02d], step [%06d/%06d], lr=%.4f, loss: %.4f, time: %05d\r' % (epoch + 1, self._hps.nll_epochs, lr, total_loss / (i + 1), time.time() - start_time), end='')
-            val_loss, bleu_score = self.valid()
+        with open(log_file_path, 'w') as f_log:
+            f_log.write('epoch,coverage,train_loss,val_loss\n')
+            for epoch in range(self._hps.nll_epochs + self._hps.coverage_epochs):
+                coverage = True if epoch > self._hps.nll_epochs else False
+                total_loss = 0.
+                train_iter = data_generator.make_batch(batch_size=self._hps.batch_size, dataset_type='train')
+                for i, (batch_x, batch_y) in enumerate(train_iter):
+                    loss, lr = self.train_step(batch_x, batch_y, coverage=coverage)
+                    total_loss += loss
+                    if (i + 1) % 100 == 0:
+                        print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, lr=%.4f, loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, lr, total_loss / (i + 1), time.time() - start_time), end='')
+                if valid_partial:
+                    valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=64, dataset_type='valid')
+                else:
+                    valid_iter = data_generator.make_batch(batch_size=64, dataset_type='valid')
+                val_loss = self.valid(valid_iter)
+                print('\nepoch [%02d/%02d], train_loss: %.4f, val_loss: %.4f, time: %.02f' % (epoch + 1, self._hps.nll_epochs + self._hps.coverage_epochs, total_loss / (i + 1), val_loss, time.time() - start_time))
+                # write to log file
+                f_log.write('%02d,%r,%.4f,%.4f\n' % (epoch, False, total_loss / (i + 1), val_loss))
+                # save to model
+                self.save_model(model_path, epoch)
 
     def valid(self, iterator, dataset_type='valid'):
         vocab = self._vocab
         total_loss = 0. 
-        total_bleu = 0.
-        for i, (batch_x, batch_y) in enumerate(iterator):
-            loss, predict += self.valid_step(batch_x, batch_y)
+        i = 0
+        for batch_x, batch_y in iterator:
+            loss = self.valid_step(batch_x, batch_y)
             total_loss += loss
-            predict_sents = vocab.decode_batch(predict, i, 1000)
-            gt_sents = vocab.decode_batch(batch_y, i, 1000)
-            bleu = vocab.batch_bleu(predict_sents, gt_sents)
-            total_bleu +== bleu
+            i += 1
         avg_loss = total_loss / (i + 1)
-        avg_bleu = total_bleu / (i + 1)
-        return avg_loss, avg_bleu 
+        return avg_loss 
 
     def init(self, npy_path=None, pretrain=True):
         self.sess.run(tf.global_variables_initializer())
         if pretrain:
             # load pretrain glove vector
-            emb = np.loadtxt(npy_path)
+            self.load_embedding(npy_path)
 
     def valid_step(self, batch_x, batch_y):
-        loss, predicts = self.sess.run(
-            [self._valid_log_loss, self.infer_predicts],
+        loss = self.sess.run(
+            self._valid_log_loss,
             feed_dict={self.x:batch_x, self.y:batch_y, self.kp:1.0}
         )
-        return loss, predicts
+        return loss
 
     def train_step(self, batch_x, batch_y, coverage=False):
         if not coverage:
@@ -286,5 +297,31 @@ class PointerModel(object):
         return loss, lr
 
 if __name__ == '__main__':
-    hps = Hps()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-hps_path')
+    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5')
+    parser.add_argument('--pretrain', action='store_false')
+    parser.add_argument('-npy_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy')
+    parser.add_argument('-log_file_path', default='./log.txt')
+    parser.add_argument('-model_path', default='./model/model.ckpt')
+    parser.add_argument('--valid_partial', action='store_false')
+    args = parser.parse_args()
+    if args.hps_path:
+        hps = Hps()
+        hps.load(args.args.hps_path)
+        hps_tuple = hps.get_tuple()
+    else:
+        hps = Hps()
+        hps_tuple = hps.get_tuple()
+    print('hps={}'.format(hps_tuple))
     vocab = Vocab()
+    data_generator = DataGenerator(args.dataset_path)
+    model = PointerModel(hps_tuple, vocab)
+    if args.pretrain:
+        model.init(npy_path=args.npy_path, pretrain=True)
+    #model.train(
+    #    data_generator=data_generator, 
+    #    log_file_path=args.log_file_path, 
+    #    model_path=args.model_path,
+    #    valid_partial=args.valid_partial
+    #)
