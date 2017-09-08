@@ -23,7 +23,7 @@ class Hps(object):
             'nll_epochs',
             'coverage_epochs']
         )
-        default = [0.15, 10000, 0.95, 512, 300, 0.8, 32, 80, 15, 7, 1]
+        default = [0.15, 10000, 1, 512, 300, 0.8, 32, 80, 15, 7, 1]
         self._hps = self.hps._make(default)
 
     def get_tuple(self):

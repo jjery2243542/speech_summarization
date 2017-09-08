@@ -88,9 +88,10 @@ class PointerModel(object):
                     scope.reuse_variables()
                 elif i > 0 and feed_previous:
                     last_output_id = tf.argmax(decoder_outputs[-1], axis=-1)
-                    inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id, axis=-1)
+                    inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
                 else:
-                    inp = decoder_inputs[i]
+                    last_output_id = decoder_inputs[i]
+                    inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
                 cell_input = input_projection(inp, attn_context)
                 cell_output, state = cell(cell_input, state)
                 attn_weights, attn_context = attention(state.h, attn_coverage)
@@ -98,6 +99,7 @@ class PointerModel(object):
                 attn_coverage += attn_weights
 
                 p_gen = gen_layer(inp, state, attn_context)
+                #output_t = get_vocab_distr(cell_output, attn_context)
                 output_t = p_gen * get_vocab_distr(cell_output, attn_context) + (1 - p_gen) * get_pointer_distr(attn_weights)
                 decoder_outputs.append(output_t)
             coverage_loss = tf.stack(coverage_loss_list, axis=1)
@@ -146,19 +148,17 @@ class PointerModel(object):
     def _reduce_state(self, fw_state, bw_state):
         with tf.variable_scope('reduce') as scope:
             old_c = tf.concat(values=[fw_state.c, bw_state.c], axis=1)
-            print(old_c)
             old_h = tf.concat(values=[fw_state.h, bw_state.h], axis=1)
-            print(old_h)
             new_c = tf.layers.dense(
                 old_c,
                 units=self._hps.hidden_dim,
-                #activation=tf.nn.relu,
+                activation=tf.nn.relu,
                 name='reduce_c'
             )
             new_h = tf.layers.dense(
                 old_h,
                 units=self._hps.hidden_dim,
-                #activation=tf.nn.relu,
+                activation=tf.nn.relu,
                 name='reduce_h'
             )
             return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
@@ -177,15 +177,17 @@ class PointerModel(object):
     def _add_train_op(self):
         hps = self._hps
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        self._lr = tf.train.exponential_decay(
-            learning_rate=hps.lr, 
-            global_step=global_step, 
-            decay_steps=hps.decay_steps,
-            decay_rate=hps.decay_rate,
-            name='learing_rate'
-        )
-        self._nll_opt = tf.train.GradientDescentOptimizer(learning_rate=self._lr).minimize(self._log_loss, global_step=global_step)
-        self._coverage_opt = tf.train.GradientDescentOptimizer(learning_rate=self._lr).minimize(self._coverage_loss, global_step=global_step)
+        #self._lr = tf.train.exponential_decay(
+        #    learning_rate=hps.lr, 
+        #    global_step=global_step, 
+        #    decay_steps=hps.decay_steps,
+        #    decay_rate=hps.decay_rate,
+        #    name='learing_rate'
+        #)
+        #self._nll_opt = tf.train.GradientDescentOptimizer(learning_rate=hps.lr).minimize(self._log_loss, global_step=global_step)
+        self._nll_opt = tf.train.RMSPropOptimizer(learning_rate=hps.lr).minimize(self._log_loss, global_step=global_step)
+        #self._nll_opt = tf.train.AdagradOptimizer(learning_rate=hps.lr).minimize(self._log_loss, global_step=global_step)
+        self._coverage_opt = tf.train.AdagradOptimizer(learning_rate=hps.lr).minimize(self._coverage_loss, global_step=global_step)
 
     def build_graph(self):
         hps = self._hps
@@ -196,12 +198,12 @@ class PointerModel(object):
             encoder_inputs = tf.nn.embedding_lookup(self.embedding_matrix, self.x)
             encoder_outputs, fw_state, bw_state = self._add_encoder(encoder_inputs)
             new_state = self._reduce_state(fw_state, bw_state)
-            decoder_index_inputs = [tf.ones([self.batch_size_tensor], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)
-            decoder_embedding_inputs = [tf.nn.embedding_lookup(self.embedding_matrix, x) for x in decoder_index_inputs[:-1]]
-            train_outputs_list, coverage_loss = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, False)
+            decoder_index_inputs = [tf.ones([self.batch_size_tensor], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)[:-1]
+            train_outputs_list, coverage_loss = self._add_decoder(decoder_index_inputs, new_state, encoder_outputs, False)
             self.train_logits = tf.stack(train_outputs_list, axis=1)
+            self.train_predicts = tf.argmax(self.train_logits, axis=-1)
             scope.reuse_variables()
-            infer_outputs_list, _ = self._add_decoder(decoder_embedding_inputs, new_state, encoder_outputs, True)
+            infer_outputs_list, _ = self._add_decoder(decoder_index_inputs, new_state, encoder_outputs, True)
             self.infer_logits = tf.stack(infer_outputs_list, axis=1)
             self.infer_predicts = tf.argmax(self.infer_logits, axis=-1)
 
@@ -244,10 +246,9 @@ class PointerModel(object):
                 total_loss = 0.
                 train_iter = data_generator.make_batch(batch_size=self._hps.batch_size, dataset_type='train')
                 for i, (batch_x, batch_y) in enumerate(train_iter):
-                    loss, lr = self.train_step(batch_x, batch_y, coverage=coverage)
+                    loss = self.train_step(batch_x, batch_y, coverage=coverage)
                     total_loss += loss
-                    if (i + 1) % 100 == 0:
-                        print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, lr=%.4f, loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, lr, total_loss / (i + 1), time.time() - start_time), end='')
+                    print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, total_loss / (i + 1), time.time() - start_time), end='')
                 if valid_partial:
                     valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=64, dataset_type='valid')
                 else:
@@ -285,16 +286,16 @@ class PointerModel(object):
 
     def train_step(self, batch_x, batch_y, coverage=False):
         if not coverage:
-            _, loss, lr = self.sess.run(
-                [self._nll_opt, self._log_loss, self._lr], 
+            _, loss = self.sess.run(
+                [self._nll_opt, self._log_loss], 
                 feed_dict={self.x:batch_x, self.y:batch_y, self.kp:self._hps.keep_prob}
             )
         else:
-            _, loss, lr = self.sess.run(
-                [self._coverage_opt, self._coverage_loss, self._lr], 
+            _, loss = self.sess.run(
+                [self._coverage_opt, self._coverage_loss], 
                 feed_dict={self.x:batch_x, self.y:batch_y, self.kp:self._hps.keep_prob}
             )
-        return loss, lr
+        return loss
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -313,15 +314,15 @@ if __name__ == '__main__':
     else:
         hps = Hps()
         hps_tuple = hps.get_tuple()
-    print('hps={}'.format(hps_tuple))
+    print(hps_tuple)
     vocab = Vocab()
     data_generator = DataGenerator(args.dataset_path)
     model = PointerModel(hps_tuple, vocab)
     if args.pretrain:
         model.init(npy_path=args.npy_path, pretrain=True)
-    #model.train(
-    #    data_generator=data_generator, 
-    #    log_file_path=args.log_file_path, 
-    #    model_path=args.model_path,
-    #    valid_partial=args.valid_partial
-    #)
+    model.train(
+        data_generator=data_generator, 
+        log_file_path=args.log_file_path, 
+        model_path=args.model_path,
+        valid_partial=args.valid_partial
+    )
