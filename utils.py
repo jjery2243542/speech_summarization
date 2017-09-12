@@ -12,8 +12,7 @@ class Hps(object):
     def __init__(self):
         self.hps = namedtuple('hps', [
             'lr', 
-            'decay_steps', 
-            'decay_rate', 
+            'max_grad_norm',
             'hidden_dim', 
             'embedding_dim', 
             'keep_prob', 
@@ -23,7 +22,7 @@ class Hps(object):
             'nll_epochs',
             'coverage_epochs']
         )
-        default = [0.15, 10000, 1, 512, 300, 0.8, 32, 80, 15, 7, 1]
+        default = [0.15, 2, 512, 300, 0.8, 32, 80, 15, 7, 1]
         self._hps = self.hps._make(default)
 
     def get_tuple(self):

@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python.ops import variable_scope
 import numpy as np
 from utils import Hps
 from utils import Vocab
@@ -22,88 +23,98 @@ class PointerModel(object):
         vocab_size = self._vocab.size()
         encoder_inputs = self.x
         embedding_matrix = self.embedding_matrix
+        # attention variables
+        V = tf.get_variable(name='V', shape=[hidden_dim, 1])
+        W_h = tf.get_variable(name='W_h', shape=[2 * hidden_dim, hidden_dim])
+        W_s = tf.get_variable(name='W_s', shape=[hidden_dim, hidden_dim])
+        W_c = tf.get_variable(name='W_c', shape=[hidden_dim])
+        b_attn = tf.get_variable(name='b_attn', shape=[hidden_dim])
+        # input one-hot for attention
+        input_one_hot = tf.one_hot(encoder_inputs, vocab_size)
+        encoder_length = encoder_states.get_shape()[1].value
+        # flatten to matmul
+        flatten_enc = tf.reshape(encoder_states, [-1, 2 * hidden_dim])
+        flatten_enc = tf.matmul(flatten_enc, W_h)
+        # reshape back to original
+        enc = tf.reshape(flatten_enc, [-1, encoder_length, hidden_dim])
 
-        with tf.variable_scope('pointer_decoder') as scope:
-            V = tf.get_variable(name='V', shape=[hidden_dim, 1])
-            W_h = tf.get_variable(name='W_h', shape=[2 * hidden_dim, hidden_dim])
-            W_s = tf.get_variable(name='W_s', shape=[hidden_dim, hidden_dim])
-            W_c = tf.get_variable(name='W_c', shape=[hidden_dim])
-            b_attn = tf.get_variable(name='b_attn', shape=[hidden_dim])
-            # input one-hot for attention
-            input_one_hot = tf.one_hot(encoder_inputs, vocab_size)
-            encoder_length = encoder_states.get_shape()[1].value
-            # flatten to matmul
-            flatten_enc = tf.reshape(encoder_states, [-1, 2 * hidden_dim])
-            flatten_enc = tf.matmul(flatten_enc, W_h)
-            # reshape back to original
-            enc = tf.reshape(flatten_enc, [-1, encoder_length, hidden_dim])
+        def input_projection(inp, last_attn_context):
+            inp = tf.concat([inp, last_attn_context], axis=1)
+            return tf.layers.dense(inp, hidden_dim, name='input_projection')
 
-            def input_projection(inp, last_attn_context):
-                inp = tf.concat([inp, last_attn_context], axis=1)
-                return tf.layers.dense(inp, hidden_dim, name='input_projection')
+        def gen_layer(inp, state, attn_context):
+            inp = tf.concat([inp, state.h, attn_context], axis=1)
+            return tf.layers.dense(inp, 1, activation=tf.nn.sigmoid, name='gen_layer')
 
-            def gen_layer(inp, state, attn_context):
-                inp = tf.concat([inp, state.h, attn_context], axis=1)
-                return tf.layers.dense(inp, 1, activation=tf.nn.sigmoid, name='gen_layer')
+        def attention(dec, c_t):
+            """
+            c_t refer to coervage vector
+            c_t shape = [batch_size, encoder_length]
+            """
+            # decoder state
+            dec = tf.matmul(dec, W_s)
+            dec = tf.expand_dims(dec, axis=1)
+            cover = tf.expand_dims(c_t, axis=2)
+            cover = cover * W_c
+            H = tf.nn.tanh(dec + enc + cover + b_attn)
+            flatten_H = tf.reshape(H, [-1, hidden_dim])
+            attn_weights = tf.matmul(flatten_H, V)
+            attn_weights = tf.reshape(attn_weights, [-1, encoder_length])
+            attn_weights = tf.nn.softmax(attn_weights)
+            expand_attn_weights = tf.expand_dims(attn_weights, axis=1)
+            attn_context = tf.matmul(expand_attn_weights, encoder_states)
+            attn_context = tf.squeeze(attn_context, axis=1)
+            return attn_weights, attn_context
 
-            def attention(dec, c_t):
-                """
-                c_t refer to coervage vector
-                c_t shape = [batch_size, encoder_length]
-                """
-                dec = tf.matmul(dec, W_s)
-                dec = tf.expand_dims(dec, axis=1)
-                cover = tf.expand_dims(c_t, axis=2)
-                cover = cover * W_c
-                H = tf.nn.tanh(dec + enc + cover + b_attn)
-                flatten_H = tf.reshape(H, [-1, hidden_dim])
-                attn_weights = tf.matmul(flatten_H, V)
-                attn_weights = tf.reshape(attn_weights, [-1, encoder_length])
-                attn_weights = tf.nn.softmax(attn_weights)
-                expand_attn_weights = tf.expand_dims(attn_weights, axis=1)
-                attn_context = tf.matmul(expand_attn_weights, encoder_states)
-                attn_context = tf.squeeze(attn_context, axis=1)
-                return attn_weights, attn_context
+        def get_pointer_distr(attn_weights):
+            expand_attn_weights = tf.expand_dims(attn_weights, axis=1)
+            expand_pointer_distr = tf.matmul(expand_attn_weights, input_one_hot)
+            pointer_distr = tf.squeeze(expand_pointer_distr, axis=1)
+            return pointer_distr
 
-            def get_pointer_distr(attn_weights):
-                expand_attn_weights = tf.expand_dims(attn_weights, axis=1)
-                expand_pointer_distr = tf.matmul(expand_attn_weights, input_one_hot)
-                pointer_distr = tf.squeeze(expand_pointer_distr, axis=1)
-                return pointer_distr
-
-            def get_vocab_distr(cell_output, attn_context):
-                output_layer_input = tf.concat([cell_output, attn_context], axis=1)
-                output_layer_hidden = tf.layers.dense(output_layer_input, hidden_dim, activation=tf.nn.relu, name='output_projection')
-                vocab_distr = tf.layers.dense(output_layer_hidden, vocab_size, activation=tf.nn.softmax, name='output_layer')
-                return vocab_distr
-                
-            decoder_outputs = []
-            coverage_loss_list = []
-            state = initial_state
-            attn_coverage = tf.zeros([self.batch_size_tensor, encoder_states.get_shape()[1].value], dtype=tf.float32)
-            # do attention for the first time
+        def get_vocab_distr(cell_output, attn_context):
+            output_layer_input = tf.concat([cell_output, attn_context], axis=1)
+            output_layer_hidden = tf.layers.dense(
+                output_layer_input, 
+                hidden_dim * 2, 
+                activation=tf.nn.relu, 
+                name='output_projection'
+            )
+            vocab_distr = tf.layers.dense(
+                output_layer_hidden, 
+                vocab_size, 
+                activation=tf.nn.softmax, 
+                name='output_layer'
+            )
+            return vocab_distr
+            
+        decoder_outputs = []
+        coverage_loss_list = []
+        state = initial_state
+        attn_coverage = tf.zeros([self.batch_size_tensor, encoder_states.get_shape()[1].value], dtype=tf.float32)
+        # do attention for the first time
+        attn_weights, attn_context = attention(state.h, attn_coverage)
+        for i in range(len(decoder_inputs)):
+            if i > 0:
+                variable_scope.get_variable_scope().reuse_variables()
+            elif i > 0 and feed_previous:
+                last_output_id = tf.argmax(decoder_outputs[-1], axis=-1)
+                inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
+            else:
+                last_output_id = decoder_inputs[i]
+                inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
+            cell_input = input_projection(inp, attn_context)
+            cell_output, state = cell(cell_input, state)
             attn_weights, attn_context = attention(state.h, attn_coverage)
-            for i in range(len(decoder_inputs)):
-                if i > 0:
-                    scope.reuse_variables()
-                elif i > 0 and feed_previous:
-                    last_output_id = tf.argmax(decoder_outputs[-1], axis=-1)
-                    inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
-                else:
-                    last_output_id = decoder_inputs[i]
-                    inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
-                cell_input = input_projection(inp, attn_context)
-                cell_output, state = cell(cell_input, state)
-                attn_weights, attn_context = attention(state.h, attn_coverage)
-                coverage_loss_list.append(tf.minimum(attn_coverage, attn_weights))
-                attn_coverage += attn_weights
+            coverage_loss_list.append(tf.minimum(attn_coverage, attn_weights))
+            attn_coverage += attn_weights
 
-                p_gen = gen_layer(inp, state, attn_context)
-                #output_t = get_vocab_distr(cell_output, attn_context)
-                output_t = p_gen * get_vocab_distr(cell_output, attn_context) + (1 - p_gen) * get_pointer_distr(attn_weights)
-                decoder_outputs.append(output_t)
-            coverage_loss = tf.stack(coverage_loss_list, axis=1)
-            return decoder_outputs, coverage_loss
+            p_gen = gen_layer(inp, state, attn_context)
+            #output_t = get_vocab_distr(cell_output, attn_context)
+            output_t = p_gen * get_vocab_distr(cell_output, attn_context) + (1 - p_gen) * get_pointer_distr(attn_weights)
+            decoder_outputs.append(output_t)
+        coverage_loss = tf.stack(coverage_loss_list, axis=1)
+        return decoder_outputs, coverage_loss
 
     def _add_placeholder(self):
         hps = self._hps
@@ -125,16 +136,12 @@ class PointerModel(object):
             fw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             fw_cell = tf.contrib.rnn.DropoutWrapper(
                 fw_cell,
-                #input_keep_prob=self.kp,
-                #output_keep_prob=self.kp,
-                state_keep_prob=self.kp
+                input_keep_prob=self.kp,
             )
             bw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             bw_cell = tf.contrib.rnn.DropoutWrapper(
                 bw_cell, 
-                #input_keep_prob=self.kp,
-                #output_keep_prob=self.kp,
-                state_keep_prob=self.kp
+                input_keep_prob=self.kp,
             )
             (encoder_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
                 fw_cell,
@@ -161,34 +168,59 @@ class PointerModel(object):
                 activation=tf.nn.relu,
                 name='reduce_h'
             )
-            return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
+        return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
 
     def _add_decoder(self, inputs, initial_state, encoder_states, feed_previous=True):
         with tf.variable_scope('decoder') as scope:
             cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
-            cell = tf.contrib.rnn.DropoutWrapper(
-                cell,
-                #input_keep_prob=self.kp,
-                #output_keep_prob=self.kp,
-                state_keep_prob=self.kp
-            )
+            cell = tf.contrib.rnn.DropoutWrapper(cell)
             return self.PointerDecoder(inputs, initial_state, encoder_states, cell, feed_previous)
+
+    def _seq_loss(self, predict, target):
+        # padding is 0
+        vocab_size = self._vocab.size()
+        gold = tf.one_hot(
+            indices=target,
+            depth=vocab_size,
+        )
+        mask = tf.cast(tf.sign(target), dtype=tf.float32)
+        mask = tf.expand_dims(mask, axis=2)
+        loss_per_timestep = mask * (-gold * tf.log(predict))
+        num_time_step = tf.reduce_sum(mask)
+        loss = tf.reduce_sum(loss_per_timestep) / num_time_step
+        return loss
 
     def _add_train_op(self):
         hps = self._hps
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        #self._lr = tf.train.exponential_decay(
-        #    learning_rate=hps.lr, 
-        #    global_step=global_step, 
-        #    decay_steps=hps.decay_steps,
-        #    decay_rate=hps.decay_rate,
-        #    name='learing_rate'
-        #)
-        #self._nll_opt = tf.train.GradientDescentOptimizer(learning_rate=hps.lr).minimize(self._log_loss, global_step=global_step)
-        self._nll_opt = tf.train.RMSPropOptimizer(learning_rate=hps.lr).minimize(self._log_loss, global_step=global_step)
-        #self._nll_opt = tf.train.AdagradOptimizer(learning_rate=hps.lr).minimize(self._log_loss, global_step=global_step)
-        self._coverage_opt = tf.train.AdagradOptimizer(learning_rate=hps.lr).minimize(self._coverage_loss, global_step=global_step)
+        t_vars = tf.trainable_variables()
+        optimizer = tf.train.AdagradOptimizer(learning_rate=hps.lr)
+        #compute gradients
+        nll_gradients = tf.gradients(
+            self._log_loss, 
+            t_vars, 
+            aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE
+        )
+        coverage_gradients = tf.gradients(
+            self._coverage_loss, 
+            t_vars, 
+            aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE
+        )
+        # gradient clipping
+        grads, global_norm = tf.clip_by_global_norm(nll_gradients, hps.max_grad_norm)
+        self._nll_opt = optimizer.apply_gradients(
+            zip(grads, t_vars), 
+            global_step=global_step, 
+            name='nll_train_step'
+        )
+        grads, global_norm = tf.clip_by_global_norm(coverage_gradients, hps.max_grad_norm)
+        self._coverage_opt = optimizer.apply_gradients(
+            zip(grads, t_vars), 
+            global_step=global_step, 
+            name='coverage_train_step'
+        )
 
+        
     def build_graph(self):
         hps = self._hps
         vocab = self._vocab
@@ -201,29 +233,24 @@ class PointerModel(object):
             decoder_index_inputs = [tf.ones([self.batch_size_tensor], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)[:-1]
             train_outputs_list, coverage_loss = self._add_decoder(decoder_index_inputs, new_state, encoder_outputs, False)
             self.train_logits = tf.stack(train_outputs_list, axis=1)
-            self.train_predicts = tf.argmax(self.train_logits, axis=-1)
             scope.reuse_variables()
             infer_outputs_list, _ = self._add_decoder(decoder_index_inputs, new_state, encoder_outputs, True)
             self.infer_logits = tf.stack(infer_outputs_list, axis=1)
             self.infer_predicts = tf.argmax(self.infer_logits, axis=-1)
-
-        with tf.variable_scope('loss') as scope:
-            mask = tf.cast(tf.sign(self.y), dtype=tf.float32)
-            self._log_loss = tf.contrib.seq2seq.sequence_loss(
-                logits=self.train_logits,
-                targets=self.y,
-                weights=mask,
-            )
-            self._valid_log_loss = tf.contrib.seq2seq.sequence_loss(
-                logits=self.infer_logits,
-                targets=self.y,
-                weights=mask,
-            )
-            coverage_loss = coverage_loss * tf.expand_dims(mask, axis=2)
-            self._coverage_loss = tf.reduce_mean(coverage_loss)
-
-        with tf.variable_scope('training_opt') as scope:
-            self._add_train_op()
+        # calculate loss
+        mask = tf.cast(tf.sign(self.y), dtype=tf.float32)
+        self._log_loss = self._seq_loss(
+            predict=self.train_logits,
+            target=self.y
+        )
+        self._valid_log_loss = self._seq_loss(
+            predict=self.infer_logits,
+            target=self.y
+        )
+        coverage_loss = coverage_loss * tf.expand_dims(mask, axis=2)
+        self._coverage_loss = tf.reduce_sum(coverage_loss) + self._log_loss
+        # add training op
+        self._add_train_op()
 
     def load_embedding(self, npy_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy'):
         glove_vectors = np.loadtxt(npy_path)
@@ -239,7 +266,7 @@ class PointerModel(object):
         # calculate time
         start_time = time.time()
         # create log df
-        with open(log_file_path, 'w') as f_log:
+        with open(log_file_path, 'w', 0) as f_log:
             f_log.write('epoch,coverage,train_loss,val_loss\n')
             for epoch in range(self._hps.nll_epochs + self._hps.coverage_epochs):
                 coverage = True if epoch > self._hps.nll_epochs else False
@@ -248,7 +275,7 @@ class PointerModel(object):
                 for i, (batch_x, batch_y) in enumerate(train_iter):
                     loss = self.train_step(batch_x, batch_y, coverage=coverage)
                     total_loss += loss
-                    print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, total_loss / (i + 1), time.time() - start_time), end='')
+                    print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, loss, total_loss / (i + 1), time.time() - start_time), end='')
                 if valid_partial:
                     valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=64, dataset_type='valid')
                 else:
