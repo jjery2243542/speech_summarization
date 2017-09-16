@@ -259,7 +259,11 @@ class PointerModel(object):
 
     def save_model(self, path, epoch):
         self.saver.save(self.sess, path, global_step=epoch)
-        
+
+    def load_model(self, path):
+        self.saver.restore(self.sess, path)
+        print('model restore from {}'.format(path))
+
     def train(self, data_generator, log_file_path, model_path, valid_partial=False):
         # init iterator
         print('start training...')
@@ -269,7 +273,7 @@ class PointerModel(object):
         with open(log_file_path, 'w', 0) as f_log:
             f_log.write('epoch,coverage,train_loss,val_loss\n')
             for epoch in range(self._hps.nll_epochs + self._hps.coverage_epochs):
-                coverage = True if epoch > self._hps.nll_epochs else False
+                coverage = True if epoch >= self._hps.nll_epochs else False
                 total_loss = 0.
                 train_iter = data_generator.make_batch(batch_size=self._hps.batch_size, dataset_type='train')
                 for i, (batch_x, batch_y) in enumerate(train_iter):
@@ -283,7 +287,7 @@ class PointerModel(object):
                 val_loss = self.valid(valid_iter)
                 print('\nepoch [%02d/%02d], train_loss: %.4f, val_loss: %.4f, time: %.02f' % (epoch + 1, self._hps.nll_epochs + self._hps.coverage_epochs, total_loss / (i + 1), val_loss, time.time() - start_time))
                 # write to log file
-                f_log.write('%02d,%r,%.4f,%.4f\n' % (epoch, False, total_loss / (i + 1), val_loss))
+                f_log.write('%02d,%r,%.4f,%.4f\n' % (epoch, coverage, total_loss / (i + 1), val_loss))
                 # save to model
                 self.save_model(model_path, epoch)
 
@@ -303,7 +307,7 @@ class PointerModel(object):
         if pretrain:
             # load pretrain glove vector
             self.load_embedding(npy_path)
-
+    def predict(self, batch_x):
     def valid_step(self, batch_x, batch_y):
         loss = self.sess.run(
             self._valid_log_loss,
