@@ -33,6 +33,6 @@ if __name__ == '__main__':
     r.model_dir = model_dir
     r.system_filename_pattern = 'doc.(\d+).txt'
     r.model_filename_pattern = 'doc.#ID#.txt'
-    output = r.convert_and_evaluate()
+    output = r.convert_and_evaluate(rouge_args='-e /home_local/rouge/ROUGE-RELEASE-1.5.5/data -a -n 3 -u')
     print(output)
     output_dict = r.output_to_dict(output)
