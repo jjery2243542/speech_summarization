@@ -8,7 +8,11 @@ This repo contain the code for speech_summarization project.
 - [x] process text files to hdf5 file
 - [x] training part model
 - [x] inference part model
-- [ ] MFCC extractor
-- [ ] model with mfcc inputs
+- [x] feature extractor
 - [x] spoken document tokenize(coreNLP)
 - [x] add extend dictionary functionality to preprocessor
+- [ ] sentence level feature extraction
+- [ ] word level feature extraction
+- [ ] cnn/daily mail dataset preprocess
+- [ ] train cnn/daily mail base model
+- [ ] model with audio inputs
