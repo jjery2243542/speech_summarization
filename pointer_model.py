@@ -364,6 +364,8 @@ if __name__ == '__main__':
     parser.add_argument('-predict')
     parser.add_argument('-result_path', default='./result_index.txt')
     parser.add_argument('-load_model')
+    parser.add_argument('-vocab_path')
+    parser.add_argument('-unkmap_path')
     args = parser.parse_args()
     if args.hps_path:
         hps = Hps()
@@ -373,7 +375,7 @@ if __name__ == '__main__':
         hps = Hps()
         hps_tuple = hps.get_tuple()
     print(hps_tuple)
-    vocab = Vocab()
+    vocab = Vocab(args.vocab_path, args.unkmap_path)
     data_generator = DataGenerator(args.dataset_path)
     model = PointerModel(hps_tuple, vocab)
     if args.load_model:
