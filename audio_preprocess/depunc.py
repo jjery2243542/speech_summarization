@@ -12,6 +12,4 @@ if __name__ == '__main__':
                 num_punc = sum([1 if c in string.punctuation else 0 for c in word])
                 if num_punc < len(word):
                     words.append(word)
-            f_out.write(' '.join(words) + '\n')
-
-
+            f_out.write('{}\n'.format(' '.join(words)))

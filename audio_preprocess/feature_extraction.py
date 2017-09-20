@@ -82,12 +82,13 @@ def kaldi_mfcc(tmp_dir, wav_path, feat_path):
     
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print('feat_extraction.py [input_dir] [output_path]')
+        print('feat_extraction.py [input_dir] [output_path] [feature_type=prosody|emotion]')
+        exit(0)
     input_dir = sys.argv[1]
     output_path = sys.argv[2]
 
     # mkdir tmp_dir
-    tmp_dir = '/tmp/smile_tmp/'
+    tmp_dir = '/tmp/feature_tmp/'
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
 

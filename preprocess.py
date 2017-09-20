@@ -155,7 +155,7 @@ class Preprocessor(object):
             self.word2idx = pickle.load(f_in)
         print('load vocab file from {}'.format(path))
 
-    def get_vocab(self, root_dir, min_occur, num_unks=20):
+    def get_vocab(self, root_dir, min_occur, num_unks=30):
         '''
         root_dir-content-train.txt
                         -valid.txt
@@ -195,7 +195,7 @@ class Preprocessor(object):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--count', action='store_true')
-    parser.add_argument('-doc_path', default='/home/jjery2243542/datasets/cnn_news/processed/split/')
+    parser.add_argument('-doc_path', default='/home/jjery2243542/datasets/summary/cnn_news/processed/split/')
     parser.add_argument('--get_vocab', action='store_true')
     parser.add_argument('--load_vocab', action='store_true')
     parser.add_argument('--dump_vocab', action='store_true')

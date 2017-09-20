@@ -219,7 +219,6 @@ class PointerModel(object):
             global_step=global_step, 
             name='coverage_train_step'
         )
-
         
     def build_graph(self):
         hps = self._hps
@@ -248,7 +247,7 @@ class PointerModel(object):
             target=self.y
         )
         coverage_loss = coverage_loss * tf.expand_dims(mask, axis=2)
-        self._coverage_loss = tf.reduce_sum(coverage_loss) + self._log_loss
+        self._coverage_loss = tf.reduce_sum(coverage_loss) * self._hps.lamb + self._log_loss
         # add training op
         self._add_train_op()
 
@@ -270,9 +269,14 @@ class PointerModel(object):
         # calculate time
         start_time = time.time()
         # create log df
-        with open(log_file_path, 'w', 0) as f_log:
+        with open(log_file_path, 'w') as f_log:
             f_log.write('epoch,coverage,train_loss,val_loss\n')
+            prev_val_loss = 100.
+            early_stop = False
             for epoch in range(self._hps.nll_epochs + self._hps.coverage_epochs):
+                # early stop
+                if early_stop and epoch < self._hps.nll_epochs:
+                    continue
                 coverage = True if epoch >= self._hps.nll_epochs else False
                 total_loss = 0.
                 train_iter = data_generator.make_batch(batch_size=self._hps.batch_size, dataset_type='train')
@@ -281,18 +285,21 @@ class PointerModel(object):
                     total_loss += loss
                     print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, loss, total_loss / (i + 1), time.time() - start_time), end='')
                 if valid_partial:
-                    valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=64, dataset_type='valid')
+                    valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=16, dataset_type='valid')
                 else:
-                    valid_iter = data_generator.make_batch(batch_size=64, dataset_type='valid')
+                    valid_iter = data_generator.make_batch(batch_size=16, dataset_type='valid')
                 val_loss = self.valid(valid_iter)
                 print('\nepoch [%02d/%02d], train_loss: %.4f, val_loss: %.4f, time: %.02f' % (epoch + 1, self._hps.nll_epochs + self._hps.coverage_epochs, total_loss / (i + 1), val_loss, time.time() - start_time))
                 # write to log file
                 f_log.write('%02d,%r,%.4f,%.4f\n' % (epoch, coverage, total_loss / (i + 1), val_loss))
                 # save to model
                 self.save_model(model_path, epoch)
+                if prev_val_loss < val_loss:
+                    early_stop = True
+                else:
+                    prev_val_loss = val_loss
 
     def valid(self, iterator, dataset_type='valid'):
-        vocab = self._vocab
         total_loss = 0. 
         i = 0
         for batch_x, batch_y in iterator:
@@ -307,7 +314,23 @@ class PointerModel(object):
         if pretrain:
             # load pretrain glove vector
             self.load_embedding(npy_path)
-    def predict(self, batch_x):
+
+    def predict(self, iterator, dataset_type='valid', output_path='result_index.txt'):
+        with open(output_path, 'w') as f_out:
+            for i, (batch_x, batch_y) in enumerate(iterator):
+                all_result = self.predict_step(batch_x)
+                for result in all_result:
+                    for word_idx in result:
+                        f_out.write('{} '.format(word_idx))
+                    f_out.write('\n')
+        print(avg_p_gen / (i + 1))
+    def predict_step(self, batch_x):
+        predict = self.sess.run(
+            self.infer_predicts,
+            feed_dict={self.x:batch_x, self.kp:1.0}
+        )
+        return predict
+
     def valid_step(self, batch_x, batch_y):
         loss = self.sess.run(
             self._valid_log_loss,
@@ -332,15 +355,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-hps_path')
     parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5')
-    parser.add_argument('--pretrain', action='store_false')
+    parser.add_argument('--pretrain_wordvec', action='store_true')
     parser.add_argument('-npy_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy')
     parser.add_argument('-log_file_path', default='./log.txt')
     parser.add_argument('-model_path', default='./model/model.ckpt')
-    parser.add_argument('--valid_partial', action='store_false')
+    parser.add_argument('--valid_partial', action='store_true')
+    parser.add_argument('--train', action='store_true')
+    parser.add_argument('-predict')
+    parser.add_argument('-result_path', default='./result_index.txt')
+    parser.add_argument('-load_model')
     args = parser.parse_args()
     if args.hps_path:
         hps = Hps()
-        hps.load(args.args.hps_path)
+        hps.load(args.hps_path)
         hps_tuple = hps.get_tuple()
     else:
         hps = Hps()
@@ -349,11 +376,18 @@ if __name__ == '__main__':
     vocab = Vocab()
     data_generator = DataGenerator(args.dataset_path)
     model = PointerModel(hps_tuple, vocab)
-    if args.pretrain:
+    if args.load_model:
+        model.load_model(args.load_model)
+    if args.pretrain_wordvec:
         model.init(npy_path=args.npy_path, pretrain=True)
-    model.train(
-        data_generator=data_generator, 
-        log_file_path=args.log_file_path, 
-        model_path=args.model_path,
-        valid_partial=args.valid_partial
-    )
+    if args.train:
+        model.train(
+            data_generator=data_generator, 
+            log_file_path=args.log_file_path, 
+            model_path=args.model_path,
+            valid_partial=args.valid_partial
+        )
+    if args.predict:
+        # make iterator for predict function
+        iterator = data_generator.make_batch(batch_size=16, dataset_type=args.predict)
+        model.predict(iterator, output_path=args.result_path)

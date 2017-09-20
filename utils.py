@@ -7,11 +7,13 @@ from collections import namedtuple
 import numpy as np
 import nltk
 import math
+import argparse
 
 class Hps(object):
     def __init__(self):
         self.hps = namedtuple('hps', [
-            'lr', 
+            'lr',
+            'lamb',
             'max_grad_norm',
             'hidden_dim', 
             'embedding_dim', 
@@ -22,7 +24,7 @@ class Hps(object):
             'nll_epochs',
             'coverage_epochs']
         )
-        default = [0.15, 2, 512, 300, 0.8, 32, 80, 15, 7, 1]
+        default = [0.15, 0.8, 2, 256, 300, 0.8, 32, 80, 15, 10, 2]
         self._hps = self.hps._make(default)
 
     def get_tuple(self):
@@ -57,7 +59,9 @@ class DataGenerator(object):
             yield batch_x, batch_y
 
 class Vocab(object):
-    def __init__(self, vocab_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/vocab.pkl', unk_map_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5.unk.json'):
+    def __init__(self, 
+    vocab_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/vocab.pkl', 
+    unk_map_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5.unk.json'):
         with open(vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
@@ -74,13 +78,13 @@ class Vocab(object):
         hyp = [sent.strip().split() for sent in hypo_sents]
         ref = [[sent.strip().split()] for sent in ref_sents]
         return nltk.translate.bleu_score.corpus_bleu(ref, hyp)
-        
-    def decode_batch(self, idx_seqs, batch_idx, batch_size, dataset_type='valid'):
-        sents = []
-        for i, idx_seq in enumerate(idx_seqs):
-            sent = self.decode(idx_seq, self.all_unk_map[dataset_type][batch_idx * batch_size + i])
-            sents.append(sent)
-        return sents
+
+    def decode_docs(self, hypo_index_path, hypo_path, dataset_type='valid'):
+        with open(hypo_index_path) as f_in, open(hypo_path, 'w') as f_out:
+            for line, unk_map in zip(f_in, self.all_unk_map[dataset_type]):
+                idx_seq = [int(idx) for idx in line.strip().split()]
+                sent = self.decode(idx_seq, unk_map)
+                f_out.write(sent + '\n')
         
     def decode(self, idx_seq, unk_map):
         """
@@ -106,16 +110,15 @@ class Vocab(object):
         return len(self.word2idx)
 
 if __name__ == '__main__':
-    ## test hps
-    #hps = Hps()
-    #hps.dump('./hps/default.json')
+    hps = Hps()
+    hps.dump('./hps/default.json')
+    # main function for decode
+    #parser = argparse.ArgumentParser()
+    #parser.add_argument('-i', '-input_path')
+    #parser.add_argument('-o', '-output_path')
+    #parser.add_argument('-dataset_type', default='valid')
+    #args = parser.parse_args()
 
-    ## test data_generator
-    dg = DataGenerator()
-    vocab = Vocab()
-    for i, (batch_x, batch_y) in enumerate(dg.make_batch(batch_size=5, num_datapoints=12, dataset_type='valid')):
-        print(vocab.decode_batch(batch_x, i, 5))
-        print(vocab.decode_batch(batch_y, i, 5))
-        if i > 5:
-            break
-        
+    #dg = DataGenerator()
+    #vocab = Vocab()
+    #vocab.decode_docs(args.i, args.o, args.dataset_type)
