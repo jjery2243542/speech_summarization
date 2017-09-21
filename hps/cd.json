@@ -3,11 +3,11 @@
     "lamb": 0.8,
     "max_grad_norm": 2,
     "hidden_dim": 256,
-    "embedding_dim": 300,
-    "keep_prob": 0.8,
+    "embedding_dim": 128,
+    "keep_prob": 0.95,
     "batch_size": 16,
     "encoder_length": 400,
     "decoder_length": 100,
-    "nll_epochs": 50,
+    "nll_epochs": 15,
     "coverage_epochs": 1
 }

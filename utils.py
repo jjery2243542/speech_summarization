@@ -67,7 +67,7 @@ class Vocab(object):
         self.idx2word = {v:k for k, v in self.word2idx.items()}
         # <PAD>, <BOS>, <EOS>
         self.num_symbols = 3
-        self.num_unks = 20
+        self.num_unks = 30
 
         # read unk_map json
         with open(unk_map_path, 'r') as f_json:

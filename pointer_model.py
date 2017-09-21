@@ -5,6 +5,7 @@ from utils import Hps
 from utils import Vocab
 from utils import DataGenerator
 import time
+import datetime
 import argparse
 
 class PointerModel(object):
@@ -127,7 +128,7 @@ class PointerModel(object):
         vocab = self._vocab
         embedding_dim = self._hps.embedding_dim
         with tf.variable_scope('embedding') as scope:
-            word_matrix = tf.get_variable('embedding', [vocab.size() - (vocab.num_symbols + vocab.num_unks), embedding_dim], dtype=tf.float32, trainable=False)
+            word_matrix = tf.get_variable('embedding', [vocab.size() - (vocab.num_symbols + vocab.num_unks), embedding_dim], dtype=tf.float32, trainable=True)
             symbol_matrix = tf.get_variable('symbols', [vocab.num_symbols + vocab.num_unks, embedding_dim], dtype=tf.float32)
             self.embedding_matrix = tf.concat([symbol_matrix, word_matrix], axis=0)
 
@@ -283,13 +284,13 @@ class PointerModel(object):
                 for i, (batch_x, batch_y) in enumerate(train_iter):
                     loss = self.train_step(batch_x, batch_y, coverage=coverage)
                     total_loss += loss
-                    print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %05d\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, loss, total_loss / (i + 1), time.time() - start_time), end='')
+                    print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %s\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, loss, total_loss / (i + 1), datetime.timedelta(seconds=int(time.time() - start_time))), end='')
                 if valid_partial:
                     valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=16, dataset_type='valid')
                 else:
                     valid_iter = data_generator.make_batch(batch_size=16, dataset_type='valid')
                 val_loss = self.valid(valid_iter)
-                print('\nepoch [%02d/%02d], train_loss: %.4f, val_loss: %.4f, time: %.02f' % (epoch + 1, self._hps.nll_epochs + self._hps.coverage_epochs, total_loss / (i + 1), val_loss, time.time() - start_time))
+                print('\nepoch [%02d/%02d], train_loss: %.4f, val_loss: %.4f, time: %s' % (epoch + 1, self._hps.nll_epochs + self._hps.coverage_epochs, total_loss / (i + 1), val_loss, datetime.timedelta(seconds=int(time.time() - start_time))))
                 # write to log file
                 f_log.write('%02d,%r,%.4f,%.4f\n' % (epoch, coverage, total_loss / (i + 1), val_loss))
                 # save to model
@@ -309,7 +310,7 @@ class PointerModel(object):
         avg_loss = total_loss / (i + 1)
         return avg_loss 
 
-    def init(self, npy_path=None, pretrain=True):
+    def init(self, npy_path=None, pretrain=False):
         self.sess.run(tf.global_variables_initializer())
         if pretrain:
             # load pretrain glove vector
@@ -365,7 +366,6 @@ if __name__ == '__main__':
     parser.add_argument('-result_path', default='./result_index.txt')
     parser.add_argument('-load_model')
     parser.add_argument('-vocab_path')
-    parser.add_argument('-unkmap_path')
     args = parser.parse_args()
     if args.hps_path:
         hps = Hps()
@@ -375,13 +375,15 @@ if __name__ == '__main__':
         hps = Hps()
         hps_tuple = hps.get_tuple()
     print(hps_tuple)
-    vocab = Vocab(args.vocab_path, args.unkmap_path)
+    vocab = Vocab(args.vocab_path, args.dataset_path + '.unk.json')
     data_generator = DataGenerator(args.dataset_path)
     model = PointerModel(hps_tuple, vocab)
     if args.load_model:
         model.load_model(args.load_model)
     if args.pretrain_wordvec:
         model.init(npy_path=args.npy_path, pretrain=True)
+    else:
+        model.init(pretrain=False)
     if args.train:
         model.train(
             data_generator=data_generator, 
