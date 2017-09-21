@@ -67,7 +67,7 @@ class Preprocessor(object):
         np.savetxt(npy_path, emb)
         print('{} word in glove'.format(word_cnt / len(self.word2idx)))
 
-    def make_datasets(self, root_dir, dump_path, unk_map_path, content_length=80, title_length=15, max_num_unks=20):
+    def make_datasets(self, root_dir, dump_path, unk_map_path, content_length=80, title_length=15, max_num_unks=30):
          '''
          root_dir-content-train.txt
                          -valid.txt
