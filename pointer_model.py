@@ -3,10 +3,6 @@ from tensorflow.python.ops import variable_scope
 import numpy as np
 from utils import Hps
 from utils import Vocab
-from utils import DataGenerator
-import time
-import datetime
-import argparse
 
 class PointerModel(object):
     def __init__(self, hps, vocab):
@@ -111,7 +107,6 @@ class PointerModel(object):
             attn_coverage += attn_weights
 
             p_gen = gen_layer(inp, state, attn_context)
-            #output_t = get_vocab_distr(cell_output, attn_context)
             output_t = p_gen * get_vocab_distr(cell_output, attn_context) + (1 - p_gen) * get_pointer_distr(attn_weights)
             decoder_outputs.append(output_t)
         coverage_loss = tf.stack(coverage_loss_list, axis=1)
@@ -160,13 +155,13 @@ class PointerModel(object):
             new_c = tf.layers.dense(
                 old_c,
                 units=self._hps.hidden_dim,
-                activation=tf.nn.relu,
+                #activation=tf.nn.relu,
                 name='reduce_c'
             )
             new_h = tf.layers.dense(
                 old_h,
                 units=self._hps.hidden_dim,
-                activation=tf.nn.relu,
+                #activation=tf.nn.relu,
                 name='reduce_h'
             )
         return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
@@ -252,7 +247,7 @@ class PointerModel(object):
         # add training op
         self._add_train_op()
 
-    def load_embedding(self, npy_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy'):
+    def load_embedding(self, npy_path):
         glove_vectors = np.loadtxt(npy_path)
         self.sess.run(self.embedding_matrix, feed_dict={self.embedding_matrix:glove_vectors})
         print('pretrain vectors loaded')
@@ -264,67 +259,12 @@ class PointerModel(object):
         self.saver.restore(self.sess, path)
         print('model restore from {}'.format(path))
 
-    def train(self, data_generator, log_file_path, model_path, valid_partial=False):
-        # init iterator
-        print('start training...')
-        # calculate time
-        start_time = time.time()
-        # create log df
-        with open(log_file_path, 'w') as f_log:
-            f_log.write('epoch,coverage,train_loss,val_loss\n')
-            prev_val_loss = 100.
-            early_stop = False
-            for epoch in range(self._hps.nll_epochs + self._hps.coverage_epochs):
-                # early stop
-                if early_stop and epoch < self._hps.nll_epochs:
-                    continue
-                coverage = True if epoch >= self._hps.nll_epochs else False
-                total_loss = 0.
-                train_iter = data_generator.make_batch(batch_size=self._hps.batch_size, dataset_type='train')
-                for i, (batch_x, batch_y) in enumerate(train_iter):
-                    loss = self.train_step(batch_x, batch_y, coverage=coverage)
-                    total_loss += loss
-                    print('epoch [%02d/%02d], step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %s\r' % (epoch+1, self._hps.nll_epochs + self._hps.coverage_epochs, i+1, data_generator.size('train')/self._hps.batch_size, coverage, loss, total_loss / (i + 1), datetime.timedelta(seconds=int(time.time() - start_time))), end='')
-                if valid_partial:
-                    valid_iter = data_generator.make_batch(num_datapoints=10000, batch_size=16, dataset_type='valid')
-                else:
-                    valid_iter = data_generator.make_batch(batch_size=16, dataset_type='valid')
-                val_loss = self.valid(valid_iter)
-                print('\nepoch [%02d/%02d], train_loss: %.4f, val_loss: %.4f, time: %s' % (epoch + 1, self._hps.nll_epochs + self._hps.coverage_epochs, total_loss / (i + 1), val_loss, datetime.timedelta(seconds=int(time.time() - start_time))))
-                # write to log file
-                f_log.write('%02d,%r,%.4f,%.4f\n' % (epoch, coverage, total_loss / (i + 1), val_loss))
-                # save to model
-                self.save_model(model_path, epoch)
-                if prev_val_loss < val_loss:
-                    early_stop = True
-                else:
-                    prev_val_loss = val_loss
-
-    def valid(self, iterator, dataset_type='valid'):
-        total_loss = 0. 
-        i = 0
-        for batch_x, batch_y in iterator:
-            loss = self.valid_step(batch_x, batch_y)
-            total_loss += loss
-            i += 1
-        avg_loss = total_loss / (i + 1)
-        return avg_loss 
-
-    def init(self, npy_path=None, pretrain=False):
+    def init(self, npy_path=None):
         self.sess.run(tf.global_variables_initializer())
-        if pretrain:
+        if npy_path:
             # load pretrain glove vector
             self.load_embedding(npy_path)
 
-    def predict(self, iterator, dataset_type='valid', output_path='result_index.txt'):
-        with open(output_path, 'w') as f_out:
-            for i, (batch_x, batch_y) in enumerate(iterator):
-                all_result = self.predict_step(batch_x)
-                for result in all_result:
-                    for word_idx in result:
-                        f_out.write('{} '.format(word_idx))
-                    f_out.write('\n')
-        print(avg_p_gen / (i + 1))
     def predict_step(self, batch_x):
         predict = self.sess.run(
             self.infer_predicts,
@@ -353,45 +293,7 @@ class PointerModel(object):
         return loss
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-hps_path')
-    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5')
-    parser.add_argument('--pretrain_wordvec', action='store_true')
-    parser.add_argument('-npy_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy')
-    parser.add_argument('-log_file_path', default='./log.txt')
-    parser.add_argument('-model_path', default='./model/model.ckpt')
-    parser.add_argument('--valid_partial', action='store_true')
-    parser.add_argument('--train', action='store_true')
-    parser.add_argument('-predict')
-    parser.add_argument('-result_path', default='./result_index.txt')
-    parser.add_argument('-load_model')
-    parser.add_argument('-vocab_path')
-    args = parser.parse_args()
-    if args.hps_path:
-        hps = Hps()
-        hps.load(args.hps_path)
-        hps_tuple = hps.get_tuple()
-    else:
-        hps = Hps()
-        hps_tuple = hps.get_tuple()
-    print(hps_tuple)
-    vocab = Vocab(args.vocab_path, args.dataset_path + '.unk.json')
-    data_generator = DataGenerator(args.dataset_path)
-    model = PointerModel(hps_tuple, vocab)
-    if args.load_model:
-        model.load_model(args.load_model)
-    if args.pretrain_wordvec:
-        model.init(npy_path=args.npy_path, pretrain=True)
-    else:
-        model.init(pretrain=False)
-    if args.train:
-        model.train(
-            data_generator=data_generator, 
-            log_file_path=args.log_file_path, 
-            model_path=args.model_path,
-            valid_partial=args.valid_partial
-        )
-    if args.predict:
-        # make iterator for predict function
-        iterator = data_generator.make_batch(batch_size=16, dataset_type=args.predict)
-        model.predict(iterator, output_path=args.result_path)
+    vocab = Vocab()
+    hps = Hps().get_tuple()
+    model = PointerModel(hps, vocab)
+    print('model build OK')
