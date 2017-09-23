@@ -8,6 +8,7 @@ import numpy as np
 import nltk
 import math
 import argparse
+import random
 
 class Hps(object):
     def __init__(self):
@@ -40,23 +41,43 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5'):
+    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5'):
         self.datasets = h5py.File(hdf5_path, 'r')
+        # iterate on the tuple
+        self._make_indexer()
+
+    def _make_indexer(self, batch_size=16):
+        self.indexer = {'train':[], 'valid':[], 'test':[]}
+        for dataset_type in self.indexer:
+            dataset_size = self.size(dataset_type)
+            for i in range(math.ceil(dataset_size / batch_size)):
+                l = i * batch_size
+                r = min((i + 1) * batch_size, dataset_size)
+                self.indexer[dataset_type].append((l, r))
 
     def size(self, dataset_type='train'):
         return self.datasets[dataset_type + '/x'].shape[0]
 
-    def make_batch(self, num_datapoints=None, batch_size=32, dataset_type='train'):
+    def num_batchs(self, dataset_type, batch_size):
+        return math.ceil(self.size() / batch_size)
+
+    def shuffle(self, dataset_type='train'):
+        random.shuffle(self.indexer[dataset_type])
+
+    def iterator(self, num_batchs=None, batch_size=32, dataset_type='train', infinite=True, shuffle=True):
         x_path = dataset_type + '/x'
         y_path = dataset_type + '/y'
-        if not num_datapoints:
-            num_datapoints = self.datasets[x_path].shape[0]
-        for i in range(math.ceil(num_datapoints / batch_size)):
-            l = i * batch_size
-            r = min((i + 1) * batch_size, num_datapoints)
-            batch_x = self.datasets[x_path][l:r]
-            batch_y = self.datasets[y_path][l:r]
-            yield batch_x, batch_y
+        if not num_batchs:
+            num_batchs = self.num_batchs(dataset_type, batch_size)
+        # infinite loop for training
+        while infinite:
+            self.shuffle(dataset_type)
+            for i in range(num_batchs):
+                l, r = self.indexer[dataset_type][i]
+                print(l, r)
+                batch_x = self.datasets[x_path][l:r]
+                batch_y = self.datasets[y_path][l:r]
+                yield batch_x, batch_y
 
 class Vocab(object):
     def __init__(self, 
@@ -110,15 +131,10 @@ class Vocab(object):
         return len(self.word2idx)
 
 if __name__ == '__main__':
-    hps = Hps()
-    hps.dump('./hps/default.json')
-    # main function for decode
-    #parser = argparse.ArgumentParser()
-    #parser.add_argument('-i', '-input_path')
-    #parser.add_argument('-o', '-output_path')
-    #parser.add_argument('-dataset_type', default='valid')
-    #args = parser.parse_args()
-
-    #dg = DataGenerator()
-    #vocab = Vocab()
-    #vocab.decode_docs(args.i, args.o, args.dataset_type)
+    #hps = Hps()
+    #hps.dump('./hps/default.json')
+    # test dg
+    dg = DataGenerator()
+    for i, (batch_x, batch_y) in enumerate(dg.iterator()):
+        if i > 5:
+            break
