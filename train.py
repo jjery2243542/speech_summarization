@@ -3,6 +3,8 @@ import time
 import datetime
 import argparse
 from pointer_model import PointerModel
+from utils import Vocab
+from utils import Hps
 
 def train_loop(
         model, 
@@ -26,7 +28,7 @@ def train_loop(
         infinite=True, 
         shuffle=True,
     )
-    for iteration, (batch_x, batch_y) in enumerate(iterator):
+    for iteration, (batch_x, batch_y) in enumerate(train_iterator):
         loss = model.train_step(batch_x, batch_y, coverage=coverage)
         train_loss += loss
         avg_train_loss = train_loss / (iteration + 1)
@@ -45,7 +47,7 @@ def train_loop(
         print('step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %s\r' % slot_value, end='')
         # valid
         if iteration % 3000 == 0:
-            valid_iterator = dg.iterator(
+            valid_iterator = data_generator.iterator(
                 num_batchs=200,
                 batch_size=batch_size,
                 dataset_type='valid',
@@ -105,14 +107,14 @@ def valid(model, iterator):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-hps_path', default='./hps/cd.json')
-    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/giga_80_15.hdf5')
+    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5')
     parser.add_argument('--pretrain_wordvec', action='store_true')
-    parser.add_argument('-npy_path', default='/home/jjery2243542/datasets/summary/structured/15673_100_20/glove.npy')
+    parser.add_argument('-npy_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/glove.npy')
     parser.add_argument('-log_file_path', default='./log.txt')
     parser.add_argument('-write_model_path', default='./model/model.ckpt')
     parser.add_argument('--load_model')
     parser.add_argument('-read_model_path', default='./model/model.ckpt')
-    parser.add_argument('-vocab_path')
+    parser.add_argument('-vocab_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/vocab.pkl')
     args = parser.parse_args()
     # get hps
     hps = Hps()
@@ -123,9 +125,9 @@ if __name__ == '__main__':
     data_generator = DataGenerator(args.dataset_path)
     model = PointerModel(hps_tuple, vocab)
     if args.pretrain_wordvec:
-        model.init(npy_path=args.npy_path, pretrain=True)
+        model.init(npy_path=args.npy_path)
     else:
-        model.init(pretrain=False)
+        model.init()
     if args.load_model:
         model.load_model(args.read_load_model)
     train(

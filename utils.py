@@ -22,8 +22,8 @@ class Hps(object):
             'batch_size', 
             'encoder_length', 
             'decoder_length',
-            'nll_epochs',
-            'coverage_epochs']
+            'nll_iterations',
+            'coverage_iterations']
         )
         default = [0.15, 0.8, 2, 256, 300, 0.8, 32, 80, 15, 10, 2]
         self._hps = self.hps._make(default)
