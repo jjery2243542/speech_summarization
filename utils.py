@@ -64,16 +64,17 @@ class DataGenerator(object):
     def shuffle(self, dataset_type='train'):
         random.shuffle(self.indexer[dataset_type])
 
-    def iterator(self, num_batchs=None, batch_size=32, dataset_type='train', infinite=True, shuffle=True):
+    def iterator(self, num_batchs=None, batch_size=16, dataset_type='train', infinite=True, shuffle=True):
         x_path = dataset_type + '/x'
         y_path = dataset_type + '/y'
         if not num_batchs:
             num_batchs = self.num_batchs(dataset_type, batch_size)
         # infinite loop for training
-        while infinite:
+        while num_batchs > 0 or infinite:
             if shuffle:
                 self.shuffle(dataset_type)
             for i in range(num_batchs):
+                num_batchs -= 1
                 l, r = self.indexer[dataset_type][i]
                 print(l, r)
                 batch_x = self.datasets[x_path][l:r]
@@ -136,6 +137,6 @@ if __name__ == '__main__':
     #hps.dump('./hps/default.json')
     # test dg
     dg = DataGenerator()
-    for i, (batch_x, batch_y) in enumerate(dg.iterator()):
+    for i, (batch_x, batch_y) in enumerate(dg.iterator(dataset_type='valid', infinite=False, shuffle=False)):
         if i > 5:
             break
