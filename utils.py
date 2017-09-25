@@ -71,7 +71,8 @@ class DataGenerator(object):
             num_batchs = self.num_batchs(dataset_type, batch_size)
         # infinite loop for training
         while infinite:
-            self.shuffle(dataset_type)
+            if shuffle:
+                self.shuffle(dataset_type)
             for i in range(num_batchs):
                 l, r = self.indexer[dataset_type][i]
                 print(l, r)

@@ -21,6 +21,10 @@ class Preprocessor(object):
         else:
             return True
 
+    def shuffle(x, y):
+        randomized = np.arange(x.shape[0])
+        np.random.shuffle(randomized)
+
     def count(self, root_dir, content_threshold=80, title_threshold=15):
         """
         count average word length
@@ -129,6 +133,7 @@ class Preprocessor(object):
                          unk_map[dataset].append(unk)
                      X = np.array(X, dtype=np.int32)
                      Y = np.array(Y, dtype=np.int32)
+
                      print('{} X_shape={}, Y_shape={}'.format(dataset, X.shape, Y.shape))
                      print('num of unk_map in {} = {}'.format(dataset, len(unk_map[dataset])))
                      print('avg_unk in a data pair = {}'.format(num_unks / (idx + 1)))

@@ -1,6 +1,6 @@
 {
     "lr": 0.15,
-    "lamb": 0.8,
+    "lamb": 1.0,
     "max_grad_norm": 2,
     "hidden_dim": 256,
     "embedding_dim": 128,
@@ -8,6 +8,6 @@
     "batch_size": 16,
     "encoder_length": 400,
     "decoder_length": 100,
-    "nll_epochs": 15,
-    "coverage_epochs": 1
+    "nll_iterations": 250000,
+    "coverage_iterations": 3000
 }

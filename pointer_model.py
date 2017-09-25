@@ -10,7 +10,7 @@ class PointerModel(object):
         self._vocab = vocab
         self.build_graph()
         self.sess = tf.Session()
-        self.saver = tf.train.Saver(max_to_keep=2)
+        self.saver = tf.train.Saver(max_to_keep=10)
         
     def PointerDecoder(self, decoder_inputs, initial_state, encoder_states, cell, feed_previous=False):
         """
@@ -252,8 +252,8 @@ class PointerModel(object):
         self.sess.run(self.embedding_matrix, feed_dict={self.embedding_matrix:glove_vectors})
         print('pretrain vectors loaded')
 
-    def save_model(self, path, epoch):
-        self.saver.save(self.sess, path, global_step=epoch)
+    def save_model(self, path, global_step):
+        self.saver.save(self.sess, path, global_step=global_step)
 
     def load_model(self, path):
         self.saver.restore(self.sess, path)
