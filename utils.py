@@ -76,7 +76,6 @@ class DataGenerator(object):
             for i in range(num_batchs):
                 num_batchs -= 1
                 l, r = self.indexer[dataset_type][i]
-                print(l, r)
                 batch_x = self.datasets[x_path][l:r]
                 batch_y = self.datasets[y_path][l:r]
                 yield batch_x, batch_y

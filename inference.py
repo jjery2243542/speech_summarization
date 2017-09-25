@@ -5,9 +5,10 @@ from pointer_model import PointerModel
 import argparse
 
 def predict(model, iterator, output_path='result_index.txt'):
+    print('starting inference...')
     with open(output_path, 'w') as f_out:
         for i, (batch_x, batch_y) in enumerate(iterator):
-            all_result = self.predict_step(batch_x)
+            all_result = model.predict_step(batch_x)
             for result in all_result:
                 for word_idx in result:
                     f_out.write('{} '.format(word_idx))
@@ -29,6 +30,7 @@ if __name__ == '__main__':
     vocab = Vocab(args.vocab_path, args.dataset_path + '.unk.json')
     data_generator = DataGenerator(args.dataset_path)
     model = PointerModel(hps_tuple, vocab)
+    model.load_model(args.model_path)
     dg = DataGenerator(args.dataset_path)
     iterator = dg.iterator(
         batch_size=hps_tuple.batch_size, 
