@@ -6,6 +6,7 @@ import string
 import argparse
 from collections import defaultdict
 import json
+import random
 
 class Preprocessor(object):
     def __init__(self):
@@ -21,9 +22,13 @@ class Preprocessor(object):
         else:
             return True
 
-    def shuffle(x, y):
-        randomized = np.arange(x.shape[0])
-        np.random.shuffle(randomized)
+    def shuffle(self, x, y, u):
+        print('shuffling...')
+        c = list(zip(x, y, u))
+        random.shuffle(c)
+        x, y, u = zip(*c)
+        return x, y, u
+
 
     def count(self, root_dir, content_threshold=80, title_threshold=15):
         """
@@ -131,6 +136,7 @@ class Preprocessor(object):
                          Y.append(y)
                          # append unk_map in a word to the mapping dict
                          unk_map[dataset].append(unk)
+                     self.shuffle(X, Y, unk_map[dataset])
                      X = np.array(X, dtype=np.int32)
                      Y = np.array(Y, dtype=np.int32)
 
