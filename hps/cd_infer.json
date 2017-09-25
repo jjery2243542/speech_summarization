@@ -1,0 +1,13 @@
+{
+    "lr": 0.15,
+    "lamb": 1.0,
+    "max_grad_norm": 2,
+    "hidden_dim": 256,
+    "embedding_dim": 128,
+    "keep_prob": 0.95,
+    "batch_size": 16,
+    "encoder_length": 400,
+    "decoder_length": 120,
+    "nll_iterations": 250000,
+    "coverage_iterations": 3000
+}
