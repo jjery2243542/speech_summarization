@@ -136,7 +136,7 @@ class Preprocessor(object):
                          Y.append(y)
                          # append unk_map in a word to the mapping dict
                          unk_map[dataset].append(unk)
-                     self.shuffle(X, Y, unk_map[dataset])
+                     #self.shuffle(X, Y, unk_map[dataset])
                      X = np.array(X, dtype=np.int32)
                      Y = np.array(Y, dtype=np.int32)
 
