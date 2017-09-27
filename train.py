@@ -58,12 +58,12 @@ def train_loop(
             # write to log
             log_fp.write('%06d,%r,%.4f,%.4f\n' % (iteration, coverage, avg_train_loss, val_loss))
             # save model
-            model.save_model(path, global_step=iteration)
+            model.save_model(model_path, global_step=iteration)
         if val_loss - prev_loss > min_delta:
             patience -= 1
-        model.save_model(model_path, global_step=iteration)
         # finished or early stop
         if iteration + 1 >= iterations or patience == 0:
+            model.save_model(model_path, global_step=iteration)
             break
              
 def train(model, data_generator, log_file_path, model_path):
