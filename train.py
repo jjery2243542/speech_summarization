@@ -57,6 +57,7 @@ def train_loop(
             val_loss = valid(model, valid_iterator)
             # write to log
             log_fp.write('%06d,%r,%.4f,%.4f\n' % (iteration, coverage, avg_train_loss, val_loss))
+            log_fp.flush()
             # save model
             model.save_model(model_path, global_step=iteration)
         if val_loss - prev_loss > min_delta:
@@ -70,6 +71,7 @@ def train(model, data_generator, log_file_path, model_path):
     print('start training...')
     with open(log_file_path, 'w') as log_fp:
         log_fp.write('iteration,coverage,train_loss,val_loss\n')
+        log_fp.flush()
         train_loop(
             model, 
             data_generator, 
