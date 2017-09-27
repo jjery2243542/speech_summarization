@@ -15,7 +15,7 @@ def train_loop(
         batch_size=16, 
         coverage=False, 
         patience=10, 
-        min_delta=0.01):
+        min_delta=0.03):
     total_loss = 0.
     # for early stopping
     prev_val_loss = 1e7
@@ -59,13 +59,12 @@ def train_loop(
             log_fp.write('%06d,%r,%.4f,%.4f\n' % (iteration, coverage, avg_train_loss, val_loss))
             # save model
             model.save_model(path, global_step=iteration)
+        if val_loss - prev_loss > min_delta:
+            patience -= 1
+        model.save_model(model_path, global_step=iteration)
         # finished or early stop
-        if iteration + 1 >= iterations or val_loss > prev_val_loss:
-            model.save_model(model_path, global_step=iteration)
+        if iteration + 1 >= iterations or patience == 0:
             break
-        else:
-            prev_val_loss = val_loss
-            model.save_model(model_path, global_step=iteration)
              
 def train(model, data_generator, log_file_path, model_path):
     print('start training...')
