@@ -54,7 +54,7 @@ def train_loop(
                 infinite=False,
                 shuffle=False,
             )
-            val_loss = valid(model, valid_itearator)
+            val_loss = valid(model, valid_iterator)
             # write to log
             log_fp.write('%06d,%r,%.4f,%.4f\n' % (iteration, coverage, avg_train_loss, val_loss))
             # save model
