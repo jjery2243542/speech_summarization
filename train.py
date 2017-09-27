@@ -16,7 +16,7 @@ def train_loop(
         coverage=False, 
         patience=10, 
         min_delta=0.03):
-    total_loss = 0.
+    train_loss = 0.
     # for early stopping
     prev_val_loss = 1e7
     iteration = 0
