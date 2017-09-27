@@ -60,7 +60,7 @@ def train_loop(
             log_fp.flush()
             # save model
             model.save_model(model_path, global_step=iteration)
-        if val_loss - prev_loss > min_delta:
+        if val_loss - prev_val_loss > min_delta:
             patience -= 1
         # finished or early stop
         if iteration + 1 >= iterations or patience == 0:
