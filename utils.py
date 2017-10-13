@@ -41,7 +41,7 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5'):
+    def __init__(self, hdf5_path='/nfs/Mazu/jjery2243542/speech_summ_proj/speech_summ_datasets/cd_shuf_400_100.h5'):
         self.datasets = h5py.File(hdf5_path, 'r')
         # iterate on the tuple
         self._make_indexer()
@@ -73,17 +73,16 @@ class DataGenerator(object):
         while num_batchs > 0 or infinite:
             if shuffle:
                 self.shuffle(dataset_type)
-            for i in range(num_batchs):
+            for l, r in self.indexer[dataset_type]:
                 num_batchs -= 1
-                l, r = self.indexer[dataset_type][i]
                 batch_x = self.datasets[x_path][l:r]
                 batch_y = self.datasets[y_path][l:r]
                 yield batch_x, batch_y
 
 class Vocab(object):
     def __init__(self, 
-    vocab_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/vocab.pkl', 
-    unk_map_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5.unk.json'):
+    vocab_path='/nfs/Mazu/jjery2243542/speech_summ_proj/speech_summ_datasets/26693_50_30/vocab.pkl', 
+    unk_map_path='/nfs/Mazu/jjery2243542/speech_summ_proj/speech_summ_datasets/26693_50_30/cd_shuf_350_80.h5.unk.json'):
         with open(vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
@@ -136,6 +135,7 @@ if __name__ == '__main__':
     #hps.dump('./hps/default.json')
     # test dg
     dg = DataGenerator()
-    for i, (batch_x, batch_y) in enumerate(dg.iterator(dataset_type='valid', infinite=False, shuffle=False)):
+    for i, (batch_x, batch_y) in enumerate(dg.iterator(dataset_type='valid', infinite=True, shuffle=True)):
+        print(batch_x, batch_y)
         if i > 5:
             break

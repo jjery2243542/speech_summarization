@@ -108,6 +108,7 @@ class PointerModel(object):
 
             p_gen = gen_layer(inp, state, attn_context)
             output_t = p_gen * get_vocab_distr(cell_output, attn_context) + (1 - p_gen) * get_pointer_distr(attn_weights)
+            #output_t = get_vocab_distr(cell_output, attn_context)
             decoder_outputs.append(output_t)
         coverage_loss = tf.stack(coverage_loss_list, axis=1)
         return decoder_outputs, coverage_loss
@@ -128,7 +129,9 @@ class PointerModel(object):
             self.embedding_matrix = tf.concat([symbol_matrix, word_matrix], axis=0)
 
     def _add_encoder(self, encoder_inputs):
-        with tf.variable_scope('encoder'):
+        with tf.variable_scope('encoder') as scope:
+            # transpose encoder inputs
+            encoder_inputs_T = tf.transpose(encoder_inputs, [1, 0, 2])
             fw_cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
             fw_cell = tf.contrib.rnn.DropoutWrapper(
                 fw_cell,
@@ -142,26 +145,31 @@ class PointerModel(object):
             (encoder_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
                 fw_cell,
                 bw_cell, 
-                encoder_inputs,
+                encoder_inputs_T,
+                time_major=True,
                 dtype=tf.float32,
+                scope=scope,
             )
             encoder_outputs = tf.concat(values=encoder_outputs, axis=2)
+            encoder_outputs = tf.transpose(encoder_outputs, [1, 0, 2])
             return encoder_outputs, fw_state, bw_state
 
     def _reduce_state(self, fw_state, bw_state):
         with tf.variable_scope('reduce') as scope:
+            #new_c = tf.concat(values=[fw_state.c, bw_state.c], axis=1)
+            #new_h = tf.concat(values=[fw_state.h, bw_state.h], axis=1)
             old_c = tf.concat(values=[fw_state.c, bw_state.c], axis=1)
             old_h = tf.concat(values=[fw_state.h, bw_state.h], axis=1)
             new_c = tf.layers.dense(
                 old_c,
                 units=self._hps.hidden_dim,
-                #activation=tf.nn.relu,
+                #activation=tf.tanh,
                 name='reduce_c'
             )
             new_h = tf.layers.dense(
                 old_h,
                 units=self._hps.hidden_dim,
-                #activation=tf.nn.relu,
+                #activation=tf.tanh,
                 name='reduce_h'
             )
         return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
@@ -169,7 +177,6 @@ class PointerModel(object):
     def _add_decoder(self, inputs, initial_state, encoder_states, feed_previous=True):
         with tf.variable_scope('decoder') as scope:
             cell = tf.contrib.rnn.LSTMCell(self._hps.hidden_dim)
-            cell = tf.contrib.rnn.DropoutWrapper(cell)
             return self.PointerDecoder(inputs, initial_state, encoder_states, cell, feed_previous)
 
     def _seq_loss(self, predict, target):
@@ -294,6 +301,10 @@ class PointerModel(object):
 
 if __name__ == '__main__':
     vocab = Vocab()
-    hps = Hps().get_tuple()
-    model = PointerModel(hps, vocab)
+    hps = Hps()
+    hps.load('./hps/cd_v3.json')
+    hps_tuple = hps.get_tuple()
+    model = PointerModel(hps_tuple, vocab)
+    model.init()
     print('model build OK')
+    model.tt()
