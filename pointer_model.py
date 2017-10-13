@@ -94,7 +94,7 @@ class PointerModel(object):
         for i in range(len(decoder_inputs)):
             if i > 0:
                 variable_scope.get_variable_scope().reuse_variables()
-            elif i > 0 and feed_previous:
+            if i > 0 and feed_previous:
                 last_output_id = tf.argmax(decoder_outputs[-1], axis=-1)
                 inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
             else:
@@ -124,9 +124,10 @@ class PointerModel(object):
         vocab = self._vocab
         embedding_dim = self._hps.embedding_dim
         with tf.variable_scope('embedding') as scope:
-            word_matrix = tf.get_variable('embedding', [vocab.size() - (vocab.num_symbols + vocab.num_unks), embedding_dim], dtype=tf.float32, trainable=True)
-            symbol_matrix = tf.get_variable('symbols', [vocab.num_symbols + vocab.num_unks, embedding_dim], dtype=tf.float32)
-            self.embedding_matrix = tf.concat([symbol_matrix, word_matrix], axis=0)
+            #word_matrix = tf.get_variable('embedding', [vocab.size() - (vocab.num_symbols + vocab.num_unks), embedding_dim], dtype=tf.float32, trainable=True)
+            #symbol_matrix = tf.get_variable('symbols', [vocab.num_symbols + vocab.num_unks, embedding_dim], dtype=tf.float32)
+            #self.embedding_matrix = tf.concat([symbol_matrix, word_matrix], axis=0)
+            self.embedding_matrix = tf.get_variable('embedding', [vocab.size(), embedding_dim], dtype=tf.float32)
 
     def _add_encoder(self, encoder_inputs):
         with tf.variable_scope('encoder') as scope:
