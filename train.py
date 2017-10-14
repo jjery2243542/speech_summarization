@@ -46,7 +46,7 @@ def train_loop(
         )
         print('step [%06d/%06d], coverage=%r, loss: %.4f, avg_loss: %.4f, time: %s\r' % slot_value, end='')
         # valid
-        if iteration % 3000 == 0 and iteration != 0:
+        if iteration % 30000 == 0 and iteration != 0 or iteration == iterations - 1:
             valid_iterator = data_generator.iterator(
                 num_batchs=200,
                 batch_size=batch_size,
@@ -66,7 +66,6 @@ def train_loop(
         if iteration + 1 >= iterations or patience == 0:
             model.save_model(model_path, global_step=iteration)
             break
-             
 def train(model, data_generator, log_file_path, model_path):
     print('start training...')
     with open(log_file_path, 'w') as log_fp:
@@ -95,10 +94,12 @@ def train(model, data_generator, log_file_path, model_path):
             min_delta=0.01
         )
 
-def valid(model, iterator):
+def valid(model, iterator, max_batchs=100):
     total_loss = 0. 
     step = 0
-    for batch_x, batch_y in iterator:
+    for batch_idx, (batch_x, batch_y) in enumerate(iterator):
+        if batch_idx >= max_batchs:
+            break
         loss = model.valid_step(batch_x, batch_y)
         total_loss += loss
         step += 1
@@ -107,8 +108,8 @@ def valid(model, iterator):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-hps_path', default='./hps/cd.json')
-    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5')
+    parser.add_argument('-hps_path', default='./hps/giga.json')
+    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/giga_40_10.h5')
     parser.add_argument('--pretrain_wordvec', action='store_true')
     parser.add_argument('-npy_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/glove.npy')
     parser.add_argument('-log_file_path', default='./log.txt')
