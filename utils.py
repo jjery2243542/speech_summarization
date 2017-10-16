@@ -65,9 +65,10 @@ class DataGenerator(object):
     def shuffle(self, dataset_type='train'):
         random.shuffle(self.indexer[dataset_type])
 
-    def iterator(self, num_batchs=None, batch_size=16, dataset_type='train', infinite=True, shuffle=True):
+    def iterator(self, num_batchs=None, batch_size=16, dataset_type='train', infinite=True, shuffle=True, use_audio=False):
         x_path = dataset_type + '/x'
         y_path = dataset_type + '/y'
+        s_path = dataset_type + '/s'
         if not num_batchs:
             num_batchs = self.num_batchs(dataset_type, batch_size)
         # infinite loop for training
@@ -78,7 +79,11 @@ class DataGenerator(object):
                 num_batchs -= 1
                 batch_x = self.datasets[x_path][l:r]
                 batch_y = self.datasets[y_path][l:r]
-                yield batch_x, batch_y
+                if use_audio:
+                    batch_s = self.datasets[s_path][l:r]
+                    yield batch_x, batch_s, batch_y
+                else:
+                    yield batch_x, batch_y
 
 class Vocab(object):
     def __init__(self, 
