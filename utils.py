@@ -5,7 +5,7 @@ import os
 from collections import defaultdict
 from collections import namedtuple
 import numpy as np
-import nltk
+#import nltk
 import math
 import argparse
 import random
@@ -20,12 +20,13 @@ class Hps(object):
             'embedding_dim', 
             'keep_prob', 
             'batch_size', 
-            'encoder_length', 
+            'encoder_length',
+            'audio_length', 
             'decoder_length',
             'nll_iterations',
             'coverage_iterations']
         )
-        default = [0.15, 0.8, 2, 256, 300, 0.8, 32, 80, 15, 10, 2]
+        default = [0.15, 0.8, 2, 256, 300, 0.8, 32, 80, 7000, 15, 10, 2]
         self._hps = self.hps._make(default)
 
     def get_tuple(self):
@@ -41,7 +42,7 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path='/nfs/Mazu/jjery2243542/speech_summ_proj/speech_summ_datasets/cd_shuf_400_100.h5'):
+    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/giga_40_10.h5'):
         self.datasets = h5py.File(hdf5_path, 'r')
         # iterate on the tuple
         self._make_indexer()
