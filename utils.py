@@ -18,7 +18,7 @@ class Hps(object):
             'max_grad_norm',
             'hidden_dim', 
             'embedding_dim', 
-            'keep_prob', 
+            'keep_prob',
             'batch_size', 
             'encoder_length',
             'audio_length', 
@@ -42,7 +42,7 @@ class Hps(object):
             json.dump(self._hps._asdict(), f_json, indent=4, separators=(',', ': '))
         
 class DataGenerator(object):
-    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/giga_40_10.h5'):
+    def __init__(self, hdf5_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/cnn_audio_150_20.h5'):
         self.datasets = h5py.File(hdf5_path, 'r')
         # iterate on the tuple
         self._make_indexer()
@@ -82,8 +82,8 @@ class DataGenerator(object):
 
 class Vocab(object):
     def __init__(self, 
-    vocab_path='/nfs/Mazu/jjery2243542/speech_summ_proj/speech_summ_datasets/26693_50_30/vocab.pkl', 
-    unk_map_path='/nfs/Mazu/jjery2243542/speech_summ_proj/speech_summ_datasets/26693_50_30/cd_shuf_350_80.h5.unk.json'):
+    vocab_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/vocab.pkl', 
+    unk_map_path='/home/jjery2243542/datasets/summary/structured/26693_50_30/cnn_audio_150_20.h5.unk.json'):
         with open(vocab_path, 'rb') as f_in:
             self.word2idx = pickle.load(f_in)
         self.idx2word = {v:k for k, v in self.word2idx.items()}
