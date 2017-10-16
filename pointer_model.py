@@ -282,7 +282,7 @@ class PointerModel(object):
 
     def valid_step(self, batch_x, batch_y):
         loss = self.sess.run(
-            self._valid_log_loss,
+            self._log_loss,
             feed_dict={self.x:batch_x, self.y:batch_y, self.kp:1.0}
         )
         return loss
