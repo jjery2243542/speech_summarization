@@ -35,8 +35,8 @@ class PointerModel(object):
         # reshape back to original
         enc = tf.reshape(flatten_enc, [-1, encoder_length, hidden_dim])
 
-        def input_projection(inp, last_attn_context):
-            inp = tf.concat([inp, last_attn_context], axis=1)
+        def input_projection(inp, last_attn_context, cond):
+            inp = tf.concat([inp, last_attn_context, cond], axis=1)
             return tf.layers.dense(inp, hidden_dim, name='input_projection')
 
         def gen_layer(inp, state, attn_context):
@@ -100,7 +100,7 @@ class PointerModel(object):
             else:
                 last_output_id = decoder_inputs[i]
                 inp = tf.nn.embedding_lookup(self.embedding_matrix, last_output_id)
-            cell_input = input_projection(inp, attn_context)
+            cell_input = input_projection(inp, attn_context, cond)
             cell_output, state = cell(cell_input, state)
             attn_weights, attn_context = attention(state.h, attn_coverage)
             coverage_loss_list.append(tf.minimum(attn_coverage, attn_weights))
@@ -125,9 +125,6 @@ class PointerModel(object):
         vocab = self._vocab
         embedding_dim = self._hps.embedding_dim
         with tf.variable_scope('embedding') as scope:
-            #word_matrix = tf.get_variable('embedding', [vocab.size() - (vocab.num_symbols + vocab.num_unks), embedding_dim], dtype=tf.float32, trainable=True)
-            #symbol_matrix = tf.get_variable('symbols', [vocab.num_symbols + vocab.num_unks, embedding_dim], dtype=tf.float32)
-            #self.embedding_matrix = tf.concat([symbol_matrix, word_matrix], axis=0)
             self.embedding_matrix = tf.get_variable('embedding', [vocab.size(), embedding_dim], dtype=tf.float32)
 
     def _add_encoder(self, encoder_inputs):
@@ -241,41 +238,27 @@ class PointerModel(object):
                 activation=tf.nn.relu,
                 name='dense2',
             )
-            print(dense2)
             return dense2
 
     def _reduce_state(self, fw_state, bw_state, cond):
         with tf.variable_scope('reduce') as scope:
             old_c = tf.concat(values=[fw_state.c, bw_state.c], axis=1)
             old_h = tf.concat(values=[fw_state.h, bw_state.h], axis=1)
-            if not self._hps.use_audio:
-                new_c = tf.layers.dense(
-                    old_c,
-                    units=self._hps.hidden_dim,
-                    #activation=tf.tanh,
-                    name='reduce_c'
-                )
-                new_h = tf.layers.dense(
-                    old_h,
-                    units=self._hps.hidden_dim,
-                    #activation=tf.tanh,
-                    name='reduce_h'
-                )
-            else:
-                concat_c = tf.concat([old_c, cond], axis=1)
-                concat_h = tf.concat([old_h, cond], axis=1)
-                new_c = tf.layers.dense(
-                    concat_c,
-                    units=self._hps.hidden_dim,
-                    activation=tf.tanh,
-                    name='reduce_c'
-                )
-                new_h = tf.layers.dense(
-                    concat_h,
-                    units=self._hps.hidden_dim,
-                    activation=tf.tanh,
-                    name='reduce_h'
-                )
+            # different with original
+            concat_c = tf.concat([old_c, cond], axis=1)
+            concat_h = tf.concat([old_h, cond], axis=1)
+            new_c = tf.layers.dense(
+                concat_c,
+                units=self._hps.hidden_dim,
+                activation=tf.tanh,
+                name='reduce_c'
+            )
+            new_h = tf.layers.dense(
+                concat_h,
+                units=self._hps.hidden_dim,
+                activation=tf.tanh,
+                name='reduce_h'
+            )
         return tf.contrib.rnn.LSTMStateTuple(new_c, new_h)
 
     def _add_decoder(self, inputs, initial_state, encoder_states, cond, feed_previous=True):
@@ -335,8 +318,7 @@ class PointerModel(object):
             self._add_embedding()
             encoder_inputs = tf.nn.embedding_lookup(self.embedding_matrix, self.x)
             encoder_outputs, fw_state, bw_state = self._add_encoder(encoder_inputs)
-            if hps.use_audio:
-                feature_outputs = self._add_feature_encoder(self.s)
+            feature_outputs = self._add_feature_encoder(self.s)
             new_state = self._reduce_state(fw_state, bw_state)
             decoder_index_inputs = [tf.ones([self.batch_size_tensor], dtype=tf.int32)] * vocab.word2idx['<BOS>'] + tf.unstack(self.y, axis=1)[:-1]
             train_outputs_list, coverage_loss = self._add_decoder(decoder_index_inputs, new_state, encoder_outputs, feature_outputs, False)
