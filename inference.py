@@ -16,10 +16,10 @@ def predict(model, iterator, output_path='result_index.txt'):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-hps_path', default='./hps/cd.json')
+    parser.add_argument('-hps_path', default='./hps/cd_v3.json')
     parser.add_argument('-vocab_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/vocab.pkl')
-    parser.add_argument('-model_path', default='./model/model.ckpt-6')
-    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/cd_400_100.h5')
+    parser.add_argument('-model_path', default='./model/model.ckpt-2999')
+    parser.add_argument('-dataset_path', default='/home/jjery2243542/datasets/summary/structured/26693_50_30/giga_40_10.h5')
     parser.add_argument('-dataset_type', default='valid')
     parser.add_argument('-output_path', default='result.txt')
     args = parser.parse_args()
